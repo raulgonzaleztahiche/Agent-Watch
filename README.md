@@ -76,6 +76,30 @@ open ~/Applications/AgentWatch.app
 The app is signed ad hoc. The first time, macOS may ask you to allow it (right click → Open).
 "Launch at login" and notifications only work from the packaged `.app`.
 
+### Install from a release
+
+Apple Silicon only (M1 or later), macOS 14 or newer.
+
+1. Download `AgentWatch-<version>-arm64.zip` from the Releases page.
+2. Optional: check it with `shasum -a 256 AgentWatch-<version>-arm64.zip`, which must match the `.sha256` file.
+3. Unzip it and move `AgentWatch.app` to `/Applications`.
+4. The app is signed ad hoc, not with an Apple certificate, so macOS blocks a downloaded copy the first time.
+   Allow it once, either by trying to open it and then going to System Settings → Privacy & Security → **Open
+   Anyway**, or by removing the download quarantine mark:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/AgentWatch.app
+```
+
+An Apple certificate (Developer ID plus notarization) would remove that step, but it is not needed to run the app.
+
+### Publish a release
+
+```bash
+scripts/package.sh 0.1.0
+gh release create v0.1.0 dist/AgentWatch-0.1.0-arm64.zip dist/AgentWatch-0.1.0-arm64.zip.sha256 --title "Agent Watch 0.1.0"
+```
+
 To run from source without packaging, or to print the same data in a terminal:
 
 ```bash
