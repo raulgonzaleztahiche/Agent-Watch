@@ -4,10 +4,12 @@ import Foundation
 
 // Spike: print main sessions and their subagents as a tree, newest first.
 // Usage: agentwatch-cli [--hours N] [--usage]   (default: 24 h, agent tree)
-//   --usage  prints token usage per model for today and the last 7 days instead
+//   --usage   prints token usage per model for today and the last 7 days instead
+//   --limits  prints the plan limits reported by Codex instead
 
-let usage = "usage: agentwatch-cli [--hours N] [--usage]"
+let usage = "usage: agentwatch-cli [--hours N] [--usage] [--limits]"
 var showUsage = false
+var showLimits = false
 var hours: Double = 24
 var arguments = CommandLine.arguments.dropFirst()
 while let argument = arguments.popFirst() {
@@ -20,6 +22,8 @@ while let argument = arguments.popFirst() {
         hours = value
     case "--usage":
         showUsage = true
+    case "--limits":
+        showLimits = true
     default:
         FileHandle.standardError.write(Data("\(usage)\n".utf8))
         exit(2)
@@ -28,6 +32,10 @@ while let argument = arguments.popFirst() {
 
 if showUsage {
     printUsageReport()
+    exit(0)
+}
+if showLimits {
+    printLimits()
     exit(0)
 }
 
@@ -108,5 +116,25 @@ func printUsageReport() {
             pad(TokenUsage.compact(period.total.output), 9), pad(TokenUsage.compact(period.total.cacheRead), 11),
             pad("\(period.messages)", 6), period.cost.map { String(format: "$%.2f", $0) } ?? "-")
         print()
+    }
+}
+
+func printLimits() {
+    let now = Date()
+    let source = CodexLimitSource()
+    do {
+        let limits = try source.fetchLimits()
+        if limits.isEmpty { print("\(source.provider): no limits reported") }
+        for limit in limits {
+            print("\(limit.title)\(limit.plan.map { " (\($0))" } ?? "")")
+            for window in limit.windows {
+                print("  \(pad(window.label, 10)) \(window.usedPercent)% used, resets in \(window.resetsIn(now: now) ?? "?")")
+            }
+        }
+    } catch AgentSourceError.dataNotFound {
+        print("\(source.provider): not installed")
+    } catch {
+        FileHandle.standardError.write(Data("[\(source.provider)] \(error)\n".utf8))
+        exit(1)
     }
 }

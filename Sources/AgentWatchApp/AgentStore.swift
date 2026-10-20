@@ -12,8 +12,17 @@ enum PanelTab: String, CaseIterable {
 @MainActor
 @Observable
 final class AgentStore {
-    var tab = PanelTab.agents
+    var tab = PanelTab.agents {
+        didSet { if tab != oldValue { refreshLimitsIfNeeded() } }
+    }
     private(set) var usageReport = UsageReport.empty
+    /// Plan limits as reported by the providers. Only fetched while the Usage tab is on screen.
+    private(set) var limits: [PlanLimit] = []
+    private(set) var limitsError: String?
+    /// Set by the popover; limits are never fetched while nobody is looking.
+    var isPanelVisible = false {
+        didSet { if isPanelVisible && !oldValue { refreshLimitsIfNeeded() } }
+    }
 
     private(set) var sections = AgentSections.empty
     /// Time of the last poll, so rows can show elapsed time without their own timers.
@@ -32,6 +41,10 @@ final class AgentStore {
         didSet { UserDefaults.standard.set(showRecent, forKey: Self.showRecentKey) }
     }
 
+    private let limitRepository = LimitRepository { [CodexLimitSource()] }
+    private var limitsInFlight = false
+    private var lastLimitsRefresh = Date.distantPast
+
     private let repository: AgentRepository
     private let window: TimeInterval
     private let interval: Duration
@@ -43,6 +56,8 @@ final class AgentStore {
 
     /// Usage covers a week of messages and changes slowly, so it is refreshed less often than agents.
     private static let usageRefreshInterval: TimeInterval = 15
+    /// Fetching limits starts a process, so it is done at most this often.
+    private static let limitsRefreshInterval: TimeInterval = 60
 
     private static let notifyOnFinishKey = "notifyOnFinish"
     private static let showRecentKey = "showRecent"
@@ -89,5 +104,22 @@ final class AgentStore {
         }
         allErrors += usageErrors.filter { !allErrors.contains($0) }
         errors = allErrors
+        refreshLimitsIfNeeded()
+    }
+
+    /// Starts a background fetch when the Usage tab is visible and the last one is old enough.
+    /// It never blocks the polling loop: the provider process can take a second or more.
+    private func refreshLimitsIfNeeded() {
+        guard isPanelVisible, tab == .usage, !limitsInFlight,
+              Date().timeIntervalSince(lastLimitsRefresh) >= Self.limitsRefreshInterval
+        else { return }
+        limitsInFlight = true
+        Task {
+            let result = await limitRepository.fetch()
+            limits = result.limits
+            limitsError = result.errors.first
+            lastLimitsRefresh = Date()
+            limitsInFlight = false
+        }
     }
 }

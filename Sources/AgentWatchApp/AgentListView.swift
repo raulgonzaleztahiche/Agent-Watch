@@ -12,7 +12,9 @@ struct AgentListView: View {
             Divider()
             switch store.tab {
             case .agents: content
-            case .usage: UsageView(report: store.usageReport)
+            case .usage:
+                UsageView(
+                    report: store.usageReport, limits: store.limits, limitsError: store.limitsError, now: store.now)
             }
             Divider()
             footer

@@ -9,9 +9,16 @@ struct UsageView: View {
     nonisolated static let totalHeight: CGFloat = 40
     nonisolated static let rowHeight: CGFloat = 52
     nonisolated static let emptyHeight: CGFloat = 90
-    nonisolated static let maxListHeight: CGFloat = 380
+    nonisolated static let maxListHeight: CGFloat = 400
+    nonisolated static let limitsHeaderHeight: CGFloat = 30
+    nonisolated static let limitTitleHeight: CGFloat = 24
+    nonisolated static let limitWindowHeight: CGFloat = 36
+    nonisolated static let limitsNoteHeight: CGFloat = 22
 
     let report: UsageReport
+    let limits: [PlanLimit]
+    let limitsError: String?
+    let now: Date
     @State private var period = Period.today
 
     enum Period: String, CaseIterable {
@@ -31,29 +38,64 @@ struct UsageView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             Divider()
-            if current.isEmpty {
-                Text("No usage in this period")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: Self.emptyHeight)
-            } else {
-                list(for: current)
-            }
+            content(for: current)
         }
     }
 
-    private func list(for period: UsagePeriod) -> some View {
+    private var limitsHeight: CGFloat {
+        guard !limits.isEmpty || limitsError != nil else { return 0 }
+        let plans = limits.reduce(CGFloat(0)) { $0 + Self.limitTitleHeight + CGFloat($1.windows.count) * Self.limitWindowHeight }
+        return Self.limitsHeaderHeight + plans + (limits.isEmpty ? Self.limitsNoteHeight : 0)
+    }
+
+    private func content(for period: UsagePeriod) -> some View {
         let maxFresh = max(period.models.map(\.freshTokens).max() ?? 1, 1)
-        let height = min(Self.totalHeight + CGFloat(period.models.count) * Self.rowHeight + 8, Self.maxListHeight)
+        let usageHeight = period.isEmpty
+            ? Self.emptyHeight : Self.totalHeight + CGFloat(period.models.count) * Self.rowHeight
+        let height = min(limitsHeight + usageHeight + 8, Self.maxListHeight)
         return ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                totalRow(period)
-                ForEach(period.models) { model in
-                    ModelUsageRow(model: model, share: Double(model.freshTokens) / Double(maxFresh))
+                limitsSection
+                if period.isEmpty {
+                    Text("No usage in this period")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: Self.emptyHeight)
+                } else {
+                    totalRow(period)
+                    ForEach(period.models) { model in
+                        ModelUsageRow(model: model, share: Double(model.freshTokens) / Double(maxFresh))
+                    }
                 }
             }
             .padding(.vertical, 4)
         }
         .frame(height: height)
+    }
+
+    @ViewBuilder
+    private var limitsSection: some View {
+        if !limits.isEmpty || limitsError != nil {
+            HStack(spacing: 6) {
+                Image(systemName: "gauge.with.dots.needle.33percent").font(.caption2)
+                Text("PLAN LIMITS").font(.caption.weight(.semibold))
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .frame(height: Self.limitsHeaderHeight)
+            ForEach(limits) { limit in
+                LimitRow(limit: limit, now: now)
+            }
+            if limits.isEmpty, let limitsError {
+                Text("Limits unavailable")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .frame(height: Self.limitsNoteHeight, alignment: .leading)
+                    .help(limitsError)
+            }
+            Divider().padding(.vertical, 4)
+        }
     }
 
     private func totalRow(_ period: UsagePeriod) -> some View {
@@ -67,6 +109,70 @@ struct UsageView: View {
         .padding(.horizontal, 12)
         .frame(height: Self.totalHeight - 8)
         .padding(.bottom, 8)
+    }
+}
+
+private struct LimitRow: View {
+    let limit: PlanLimit
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text(limit.title).fontWeight(.semibold)
+                if let plan = limit.plan {
+                    Text(plan).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .frame(height: UsageView.limitTitleHeight, alignment: .leading)
+            ForEach(Array(limit.windows.enumerated()), id: \.offset) { _, window in
+                LimitWindowRow(window: window, now: now)
+            }
+        }
+    }
+}
+
+private struct LimitWindowRow: View {
+    let window: LimitWindow
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(window.label).font(.caption)
+                Spacer()
+                Text("\(window.usedPercent)% used")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(window.severity.color)
+                if let reset = window.resetsIn(now: now) {
+                    Text("· resets in \(reset)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Capsule()
+                .fill(Color.primary.opacity(0.10))
+                .frame(height: 6)
+                .overlay(alignment: .leading) {
+                    GeometryReader { proxy in
+                        Capsule()
+                            .fill(window.severity.color)
+                            .frame(width: max(proxy.size.width * Double(min(window.usedPercent, 100)) / 100, 3))
+                    }
+                }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: UsageView.limitWindowHeight, alignment: .leading)
+    }
+}
+
+private extension LimitWindow.Severity {
+    var color: Color {
+        switch self {
+        case .normal: .green
+        case .warning: .orange
+        case .critical: .red
+        }
     }
 }
 
