@@ -30,6 +30,15 @@ open the folder in Finder. The resume command is only offered for main sessions 
 The icon shows a count next to it while something runs. Failed or interrupted subagents trigger a
 notification; a check box in the menu also notifies when one finishes cleanly.
 
+### Usage tab
+
+The **Usage** tab sums tokens per model for **today** or the **last 7 days** (calendar days, today included):
+`in` and `out` plus cache reads, the number of model responses, and a bar relative to the busiest model.
+It is built from every response in both tools, so a session that switched models is split correctly.
+Cost appears only when the tool reports one.
+
+`in` and `out` are fresh tokens and leave out cache reads, which are far larger and much cheaper.
+
 ## Install
 
 Requires macOS 14+ and a Swift 6 toolchain (Xcode).
@@ -48,14 +57,15 @@ To run from source without packaging, or to print the same data in a terminal:
 ```bash
 swift run AgentWatchApp
 swift run agentwatch-cli --hours 24
+swift run agentwatch-cli --usage
 ```
 
 ## Where the data comes from
 
 | Tool | Source | Notes |
 | --- | --- | --- |
-| Claude Code | `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/agent-*.jsonl` | The model comes from assistant messages only. Token usage is counted once per message id. |
-| OpenCode 2.x | `~/.local/share/opencode/opencode.db`, table `session_v2` | Opened read-only. A session with a `parent_id` is a subagent. |
+| Claude Code | `~/.claude/projects/<project>/<session>.jsonl` and `<session>/subagents/agent-*.jsonl` | The model comes from assistant messages only. A message is written once per content block and its output counter grows while it streams, so usage is counted once per message id, using the last row. |
+| OpenCode 2.x | `~/.local/share/opencode/opencode.db`, tables `session_v2` (sessions) and `session_message` (per-response model, tokens, cost) | Opened read-only. A session with a `parent_id` is a subagent. |
 
 ### How "running" is decided
 
@@ -75,6 +85,9 @@ Neither tool exposes a "running" flag, so it is inferred:
 - Cost is shown only when the tool reports it. OpenCode stores `0` for many models and Claude Code stores
   none; nothing is estimated from a price table.
 - Tokens are per session or subagent. A session does not include the tokens of its subagents.
+- Usage covers what is on disk. It is not the official usage or billing of Anthropic or OpenAI: those APIs
+  need an organization admin key and measure API billing, not subscriptions. Plan limits (5-hour, weekly)
+  are not shown because neither tool exposes them locally in a reliable way.
 - "Active" is a time heuristic (30 minutes). It does not know whether the terminal is still open.
 - Claude Code subagents are never reported as failed, because its transcripts have no such signal.
 

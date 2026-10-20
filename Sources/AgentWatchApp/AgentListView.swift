@@ -10,7 +10,10 @@ struct AgentListView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
-            content
+            switch store.tab {
+            case .agents: content
+            case .usage: UsageView(report: store.usageReport)
+            }
             Divider()
             footer
         }
@@ -18,13 +21,20 @@ struct AgentListView: View {
     }
 
     private var header: some View {
-        let summary = store.summary
-        return HStack {
+        HStack {
             Text("Agent Watch").font(.headline)
             Spacer()
-            Text(summary.text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if store.tab == .agents {
+                Text(store.summary.text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Picker("View", selection: Binding(get: { store.tab }, set: { store.tab = $0 })) {
+                ForEach(PanelTab.allCases, id: \.self) { Text($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 140)
         }
         .padding(12)
     }
