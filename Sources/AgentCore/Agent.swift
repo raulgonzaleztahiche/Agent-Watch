@@ -90,6 +90,13 @@ public enum ActivityPolicy {
     /// Without a terminal signal, an agent counts as running only if it was updated this recently.
     public static let staleAfter: TimeInterval = 300
 
+    /// A session touched this recently is shown as open and waiting, not as history.
+    public static let activeWindow: TimeInterval = 1800
+
+    public static func isActive(_ lastActivity: Date, now: Date) -> Bool {
+        now.timeIntervalSince(lastActivity) < activeWindow
+    }
+
     public static func isRecent(_ updatedAt: Date, now: Date) -> Bool {
         now.timeIntervalSince(updatedAt) < staleAfter
     }

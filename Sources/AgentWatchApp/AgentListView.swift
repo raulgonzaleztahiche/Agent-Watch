@@ -32,7 +32,7 @@ struct AgentListView: View {
 
     @ViewBuilder
     private var content: some View {
-        if store.sections.active.isEmpty && store.sections.recent.isEmpty {
+        if store.sections.isEmpty {
             Text("No activity in the last 24 hours")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
@@ -70,7 +70,8 @@ struct AgentListView: View {
     }
 }
 
-/// Running agents first and highlighted; everything else folded under "Recent".
+/// Running agents first and highlighted, then open sessions that are waiting, and the rest of
+/// the history folded under "Recent".
 ///
 /// A `ScrollView` inside a window-style `MenuBarExtra` has no ideal height and collapses to
 /// zero, so the height is computed from the items (each kind has a fixed height).
@@ -85,6 +86,7 @@ struct AgentRowsList: View {
 
     private enum Item: Identifiable {
         case runningHeader
+        case activeHeader
         case nothingRunning
         case row(AgentRow)
         case recentHeader
@@ -92,6 +94,7 @@ struct AgentRowsList: View {
         var id: String {
             switch self {
             case .runningHeader: "running-header"
+            case .activeHeader: "active-header"
             case .nothingRunning: "nothing-running"
             case .row(let row): row.id
             case .recentHeader: "recent-header"
@@ -100,7 +103,7 @@ struct AgentRowsList: View {
 
         var height: CGFloat {
             switch self {
-            case .runningHeader, .recentHeader: AgentRowsList.headerHeight
+            case .runningHeader, .activeHeader, .recentHeader: AgentRowsList.headerHeight
             case .nothingRunning, .row: AgentRowsList.rowHeight
             }
         }
@@ -108,7 +111,11 @@ struct AgentRowsList: View {
 
     private var items: [Item] {
         var items: [Item] = [.runningHeader]
-        items += sections.active.isEmpty ? [.nothingRunning] : sections.active.map(Item.row)
+        items += sections.running.isEmpty ? [.nothingRunning] : sections.running.map(Item.row)
+        if sections.activeTreeCount > 0 {
+            items.append(.activeHeader)
+            items += sections.active.map(Item.row)
+        }
         if sections.recentTreeCount > 0 {
             items.append(.recentHeader)
             if showRecent { items += sections.recent.map(Item.row) }
@@ -134,13 +141,9 @@ struct AgentRowsList: View {
     private func view(for item: Item) -> some View {
         switch item {
         case .runningHeader:
-            HStack(spacing: 6) {
-                Circle().fill(.green).frame(width: 6, height: 6)
-                Text("RUNNING NOW").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .frame(height: Self.headerHeight)
+            sectionHeader("RUNNING NOW", color: .green)
+        case .activeHeader:
+            sectionHeader("ACTIVE · \(sections.activeTreeCount)", color: .orange)
         case .nothingRunning:
             Text("Nothing running right now")
                 .foregroundStyle(.secondary)
@@ -164,6 +167,18 @@ struct AgentRowsList: View {
             }
             .buttonStyle(.plain)
         }
+    }
+}
+
+private extension AgentRowsList {
+    func sectionHeader(_ title: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .frame(height: Self.headerHeight)
     }
 }
 

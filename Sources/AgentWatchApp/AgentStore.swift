@@ -7,7 +7,7 @@ import Observation
 @MainActor
 @Observable
 final class AgentStore {
-    private(set) var sections = AgentSections(active: [], recent: [], recentTreeCount: 0)
+    private(set) var sections = AgentSections.empty
     private(set) var summary = AgentSummary([])
     /// Called on the main actor whenever the running counts change.
     @ObservationIgnored var onSummaryChange: ((AgentSummary) -> Void)?
@@ -46,7 +46,7 @@ final class AgentStore {
 
     private func refresh() async {
         let result = await repository.fetch(window: window)
-        sections = AgentTree.sections(result.agents)
+        sections = AgentTree.sections(result.agents, now: Date())
         let newSummary = AgentSummary(result.agents)
         if newSummary != summary {
             summary = newSummary

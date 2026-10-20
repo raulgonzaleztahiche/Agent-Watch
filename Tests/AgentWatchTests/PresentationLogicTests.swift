@@ -71,55 +71,78 @@ private func agent(
 }
 
 @Suite struct AgentSectionsTests {
-    @Test func separatesRunningTreesFromRecentOnes() {
-        let sections = AgentTree.sections([
-            agent("busy", status: .running, startedAt: 1),
-            agent("idle", status: .idle, startedAt: 2),
-            agent("done-sub", parent: "idle", status: .succeeded, startedAt: 3),
-        ])
+    /// `agent(...)` stamps both dates with `startedAt`, so a test controls recency through it.
+    private let now = Date(timeIntervalSince1970: 100 * 60)
 
-        #expect(sections.active.map(\.agent.id) == ["busy"])
-        #expect(sections.recent.map(\.agent.id) == ["idle", "done-sub"])
+    @Test func separatesRunningActiveAndRecentTrees() {
+        let sections = AgentTree.sections([
+            agent("busy", status: .running, startedAt: 99),
+            agent("waiting", status: .idle, startedAt: 90),
+            agent("old", status: .idle, startedAt: 10),
+            agent("old-sub", parent: "old", status: .succeeded, startedAt: 11),
+        ], now: now)
+
+        #expect(sections.running.map(\.agent.id) == ["busy"])
+        #expect(sections.active.map(\.agent.id) == ["waiting"])
+        #expect(sections.recent.map(\.agent.id) == ["old", "old-sub"])
+        #expect(sections.activeTreeCount == 1)
         #expect(sections.recentTreeCount == 1)
     }
 
-    @Test func idleSessionWithARunningSubagentIsActiveAsAWhole() {
+    @Test func idleSessionWithARunningSubagentIsRunningAsAWhole() {
         let sections = AgentTree.sections([
             agent("main", status: .idle, startedAt: 1),
             agent("sub", parent: "main", status: .running, startedAt: 2),
             agent("old-sub", parent: "main", status: .succeeded, startedAt: 3),
-        ])
+        ], now: now)
 
-        #expect(sections.active.map(\.agent.id) == ["main", "old-sub", "sub"])
-        #expect(sections.active.map(\.depth) == [0, 1, 1])
-        #expect(sections.recent.isEmpty)
+        #expect(sections.running.map(\.agent.id) == ["main", "old-sub", "sub"])
+        #expect(sections.running.map(\.depth) == [0, 1, 1])
+        #expect(sections.active.isEmpty && sections.recent.isEmpty)
     }
 
-    @Test func aRunningGrandchildMakesTheWholeTreeActive() {
+    @Test func aRunningGrandchildMakesTheWholeTreeRunning() {
         let sections = AgentTree.sections([
             agent("main", status: .idle, startedAt: 1),
             agent("child", parent: "main", status: .succeeded, startedAt: 2),
             agent("grandchild", parent: "child", status: .running, startedAt: 3),
-        ])
+        ], now: now)
 
-        #expect(sections.active.count == 3)
+        #expect(sections.running.count == 3)
+    }
+
+    @Test func aRecentSubagentKeepsAnOldSessionActive() {
+        // Activity anywhere in the tree counts, not only the root's.
+        let sections = AgentTree.sections([
+            agent("main", status: .idle, startedAt: 1),
+            agent("sub", parent: "main", status: .succeeded, startedAt: 95),
+        ], now: now)
+
+        #expect(sections.active.map(\.agent.id) == ["main", "sub"])
         #expect(sections.recent.isEmpty)
+    }
+
+    @Test func activityExactlyAtTheWindowEdgeIsRecent() {
+        let edge = 100.0 - ActivityPolicy.activeWindow / 60
+        let sections = AgentTree.sections([agent("a", status: .idle, startedAt: edge)], now: now)
+
+        #expect(sections.active.isEmpty)
+        #expect(sections.recentTreeCount == 1)
     }
 
     @Test func staleAndFailedAgentsAreRecent() {
         let sections = AgentTree.sections([
             agent("a", status: .unknown, startedAt: 1),
             agent("b", status: .failed, startedAt: 2),
-        ])
+        ], now: now)
 
-        #expect(sections.active.isEmpty)
+        #expect(sections.running.isEmpty && sections.active.isEmpty)
         #expect(sections.recentTreeCount == 2)
     }
 
     @Test func noAgentsGivesEmptySections() {
-        let sections = AgentTree.sections([])
-
-        #expect(sections.active.isEmpty && sections.recent.isEmpty && sections.recentTreeCount == 0)
+        #expect(AgentTree.sections([], now: now) == .empty)
+        #expect(AgentSections.empty.isEmpty)
     }
 }
 
