@@ -19,6 +19,11 @@ final class AgentStore {
         didSet { UserDefaults.standard.set(notifyOnFinish, forKey: Self.notifyOnFinishKey) }
     }
 
+    /// Whether the "Recent" section is unfolded; remembered between launches.
+    var showRecent: Bool {
+        didSet { UserDefaults.standard.set(showRecent, forKey: Self.showRecentKey) }
+    }
+
     private let repository: AgentRepository
     private let window: TimeInterval
     private let interval: Duration
@@ -27,12 +32,14 @@ final class AgentStore {
     private let notifier = Notifier()
 
     private static let notifyOnFinishKey = "notifyOnFinish"
+    private static let showRecentKey = "showRecent"
 
     init(window: TimeInterval = 24 * 3600, interval: Duration = .seconds(2)) {
         repository = AgentRepository { [ClaudeCodeSource(), OpenCodeSource()] }
         self.window = window
         self.interval = interval
         notifyOnFinish = UserDefaults.standard.bool(forKey: Self.notifyOnFinishKey)
+        showRecent = UserDefaults.standard.bool(forKey: Self.showRecentKey)
     }
 
     func start() {

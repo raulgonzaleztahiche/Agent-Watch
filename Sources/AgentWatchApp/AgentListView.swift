@@ -5,7 +5,6 @@ import SwiftUI
 struct AgentListView: View {
     let store: AgentStore
     let launchAtLogin: LaunchAtLogin
-    @State private var showRecent = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -38,7 +37,10 @@ struct AgentListView: View {
                 .frame(maxWidth: .infinity)
                 .padding(24)
         } else {
-            AgentRowsList(sections: store.sections, now: store.now, showRecent: $showRecent)
+            AgentRowsList(
+                sections: store.sections, now: store.now,
+                showRecent: Binding(get: { store.showRecent }, set: { store.showRecent = $0 })
+            )
         }
     }
 
