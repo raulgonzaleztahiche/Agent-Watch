@@ -30,7 +30,7 @@ private struct MenuBarLabel: View {
     var body: some View {
         let running = store.summary.totalRunning
         HStack(spacing: 4) {
-            Image(systemName: running > 0 ? "bolt.horizontal.circle.fill" : "bolt.horizontal.circle")
+            Image(nsImage: running > 0 ? MenuBarGlyph.active : MenuBarGlyph.idle)
             if running > 0 {
                 Text("\(running)")
             }

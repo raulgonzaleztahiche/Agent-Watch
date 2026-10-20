@@ -11,9 +11,13 @@ APP="dist/AgentWatch.app"
 swift build -c release --product AgentWatchApp
 BIN="$(swift build -c release --product AgentWatchApp --show-bin-path)/AgentWatchApp"
 
+ICON="Resources/AppIcon.icns"
+[ -f "$ICON" ] || { echo "Missing $ICON: run 'swift scripts/make-icon.swift'" >&2; exit 1; }
+
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/AgentWatch"
+cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -24,6 +28,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key><string>Agent Watch</string>
     <key>CFBundleIdentifier</key><string>dev.agentwatch.app</string>
     <key>CFBundleExecutable</key><string>AgentWatch</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
