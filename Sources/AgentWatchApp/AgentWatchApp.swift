@@ -4,9 +4,10 @@ import SwiftUI
 @main
 struct AgentWatchApp: App {
     private let store: AgentStore
+    private let launchAtLogin = LaunchAtLogin()
 
     init() {
-        // Menu bar only: no Dock icon, no app menu.
+        // Menu bar only: no Dock icon, no app menu (also set by LSUIElement in the bundle).
         NSApplication.shared.setActivationPolicy(.accessory)
         let store = AgentStore()
         store.start()
@@ -15,7 +16,7 @@ struct AgentWatchApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            AgentListView(store: store)
+            AgentListView(store: store, launchAtLogin: launchAtLogin)
         } label: {
             MenuBarLabel(store: store)
         }

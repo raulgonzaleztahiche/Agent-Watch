@@ -4,6 +4,7 @@ import SwiftUI
 
 struct AgentListView: View {
     let store: AgentStore
+    let launchAtLogin: LaunchAtLogin
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -50,8 +51,15 @@ struct AgentListView: View {
 
     private var footer: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(store.errors, id: \.self) { error in
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Launch at login", isOn: Binding(
+                    get: { launchAtLogin.isEnabled },
+                    set: { launchAtLogin.set($0) }
+                ))
+                .toggleStyle(.checkbox)
+                .disabled(!launchAtLogin.isAvailable)
+                .help(launchAtLogin.isAvailable ? "" : "Only available from the packaged .app")
+                ForEach(store.errors + [launchAtLogin.errorMessage].compactMap { $0 }, id: \.self) { error in
                     Text(error).font(.caption2).foregroundStyle(.red)
                 }
             }
