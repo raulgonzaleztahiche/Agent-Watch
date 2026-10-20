@@ -186,9 +186,31 @@ private extension AgentRowsList {
 private struct AgentRowView: View {
     let row: AgentRow
     let now: Date
+    @State private var isHovering = false
 
     var body: some View {
         let agent = row.agent
+        Menu {
+            if let command = ResumeCommand.make(for: agent) {
+                Button("Copy resume command") { RowActions.copy(command) }
+            }
+            Button("Copy session ID") { RowActions.copy(agent.id) }
+            if let directory = agent.directory {
+                Divider()
+                Button("Copy folder path") { RowActions.copy(directory) }
+                Button("Open folder in Finder") { RowActions.openFolder(directory) }
+                    .disabled(!RowActions.folderExists(directory))
+            }
+        } label: {
+            content(for: agent)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .onHover { isHovering = $0 }
+    }
+
+    private func content(for agent: Agent) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Circle()
                 .fill(agent.status.color)
@@ -221,8 +243,14 @@ private struct AgentRowView: View {
         }
         .padding(.leading, 12 + CGFloat(row.depth) * 18)
         .padding(.trailing, 12)
-        .frame(height: AgentRowsList.rowHeight, alignment: .leading)
-        .background(agent.status == .running ? Color.green.opacity(0.14) : Color.clear)
+        .frame(maxWidth: .infinity, minHeight: AgentRowsList.rowHeight, maxHeight: AgentRowsList.rowHeight, alignment: .leading)
+        .background(background(for: agent))
+        .contentShape(Rectangle())
+    }
+
+    private func background(for agent: Agent) -> Color {
+        if agent.status == .running { return Color.green.opacity(isHovering ? 0.22 : 0.14) }
+        return isHovering ? Color.primary.opacity(0.08) : Color.clear
     }
 }
 
