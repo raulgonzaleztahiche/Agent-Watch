@@ -19,7 +19,10 @@ private final class OpenCodeFixture {
         exec("""
             CREATE TABLE session_v2 (
                 id TEXT PRIMARY KEY, parent_id TEXT, agent TEXT, title TEXT, model TEXT,
-                time_created INTEGER, time_updated INTEGER, time_idle INTEGER, idle_outcome TEXT
+                time_created INTEGER, time_updated INTEGER, time_idle INTEGER, idle_outcome TEXT,
+                cost REAL DEFAULT 0, tokens_input INTEGER DEFAULT 0, tokens_output INTEGER DEFAULT 0,
+                tokens_reasoning INTEGER DEFAULT 0, tokens_cache_read INTEGER DEFAULT 0,
+                tokens_cache_write INTEGER DEFAULT 0
             )
             """)
     }
@@ -33,7 +36,8 @@ private final class OpenCodeFixture {
     func insert(
         id: String, parent: String? = nil, agent: String? = "build", title: String? = "Task",
         model: String? = #"{"id":"gpt-6-luna","providerID":"openai","variant":"high"}"#,
-        created: Double = 0, updated: Double, idle: Double?, outcome: String?
+        created: Double = 0, updated: Double, idle: Double?, outcome: String?,
+        cost: Double = 0, tokens: (input: Int, output: Int, reasoning: Int, cacheRead: Int, cacheWrite: Int) = (0, 0, 0, 0, 0)
     ) {
         func sql(_ value: String?) -> String {
             value.map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" } ?? "NULL"
@@ -41,7 +45,9 @@ private final class OpenCodeFixture {
         func ms(_ seconds: Double?) -> String { seconds.map { String(Int64($0 * 1000)) } ?? "NULL" }
         exec("""
             INSERT INTO session_v2 VALUES (\(sql(id)), \(sql(parent)), \(sql(agent)), \(sql(title)), \
-            \(sql(model)), \(ms(created)), \(ms(updated)), \(ms(idle)), \(sql(outcome)))
+            \(sql(model)), \(ms(created)), \(ms(updated)), \(ms(idle)), \(sql(outcome)), \
+            \(cost), \(tokens.input), \(tokens.output), \(tokens.reasoning), \(tokens.cacheRead), \
+            \(tokens.cacheWrite))
             """)
     }
 
@@ -148,6 +154,37 @@ private func fetch(_ fixture: OpenCodeFixture, since: Date = .distantPast) throw
 
         let agents = try fetch(fixture, since: now.addingTimeInterval(-3600))
         #expect(Set(agents.keys) == ["new"])
+    }
+
+    @Test func readsTokenCountersAndCost() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insert(
+            id: "main", updated: t - 60, idle: t - 60, outcome: "succeeded", cost: 0.42,
+            tokens: (input: 697_449, output: 27_161, reasoning: 23_784, cacheRead: 10_280_704, cacheWrite: 5))
+
+        let main = try #require(try fetch(fixture)["main"])
+        #expect(main.usage == TokenUsage(
+            input: 697_449, output: 27_161, reasoning: 23_784, cacheRead: 10_280_704, cacheWrite: 5))
+        #expect(main.cost == 0.42)
+    }
+
+    @Test func zeroCostMeansUnknownNotFree() throws {
+        // Real data: most sessions store cost 0.0 even with millions of tokens.
+        let fixture = try OpenCodeFixture()
+        fixture.insert(
+            id: "main", updated: t - 60, idle: t - 60, outcome: "succeeded", cost: 0,
+            tokens: (input: 100, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0))
+
+        let main = try #require(try fetch(fixture)["main"])
+        #expect(main.cost == nil)
+        #expect(main.usage?.input == 100)
+    }
+
+    @Test func sessionWithoutTokensHasNoUsage() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insert(id: "main", updated: t - 60, idle: t - 60, outcome: "succeeded")
+
+        #expect(try fetch(fixture)["main"]?.usage == nil)
     }
 
     @Test func missingDatabaseThrowsDataNotFound() {

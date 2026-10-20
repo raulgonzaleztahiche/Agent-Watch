@@ -124,3 +124,31 @@ private final class FakeSource: AgentSource {
         #expect(recorder.since == now.addingTimeInterval(-3600))
     }
 }
+
+@Suite struct TokenUsageTests {
+    @Test(arguments: [
+        (0, "0"), (950, "950"), (1_000, "1k"), (1_234, "1.2k"), (27_161, "27.2k"),
+        (999_949, "999.9k"), (999_950, "1M"), (10_280_704, "10.3M"), (1_500_000_000, "1.5B"),
+    ])
+    func compactsCounts(count: Int, expected: String) {
+        #expect(TokenUsage.compact(count) == expected)
+    }
+
+    @Test func summaryShowsInputAndOutputOnly() {
+        let usage = TokenUsage(input: 697_449, output: 27_161, reasoning: 23_784, cacheRead: 10_280_704)
+
+        #expect(usage.summary == "697.4k in · 27.2k out")
+    }
+
+    @Test func emptyUsageIsEmpty() {
+        #expect(TokenUsage().isEmpty)
+        #expect(!TokenUsage(output: 1).isEmpty)
+    }
+
+    @Test func addsEveryCounter() {
+        let sum = TokenUsage(input: 1, output: 2, reasoning: 3, cacheRead: 4, cacheWrite: 5)
+            + TokenUsage(input: 10, output: 20, reasoning: 30, cacheRead: 40, cacheWrite: 50)
+
+        #expect(sum == TokenUsage(input: 11, output: 22, reasoning: 33, cacheRead: 44, cacheWrite: 55))
+    }
+}

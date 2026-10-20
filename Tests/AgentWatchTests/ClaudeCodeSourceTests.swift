@@ -76,6 +76,17 @@ private func assistant(
     return row
 }
 
+private func usageRow(
+    _ session: String, _ secondsAgo: Double, messageID: String,
+    input: Int, output: Int, cacheRead: Int = 0, cacheWrite: Int = 0, thinking: Int = 0
+) -> [String: Any] {
+    ["type": "assistant", "sessionId": session, "timestamp": stamp(secondsAgo),
+     "message": ["id": messageID, "model": "claude-sonnet-5-5", "stop_reason": "end_turn",
+                 "usage": ["input_tokens": input, "output_tokens": output,
+                           "cache_read_input_tokens": cacheRead, "cache_creation_input_tokens": cacheWrite,
+                           "output_tokens_details": ["thinking_tokens": thinking]]]]
+}
+
 private func fetch(_ fixture: ClaudeFixture, since: Date = .distantPast) throws -> [String: Agent] {
     let agents = try fixture.source().fetchAgents(updatedSince: since, now: now)
     return Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
@@ -170,6 +181,40 @@ private func fetch(_ fixture: ClaudeFixture, since: Date = .distantPast) throws 
         try fixture.append([assistant("s1", 5, stop: "end_turn")], to: url)
 
         #expect(try source.fetchAgents(updatedSince: .distantPast, now: now).first?.status == .idle)
+    }
+}
+
+@Suite struct ClaudeCodeUsageTests {
+    @Test func countsRepeatedContentBlocksOfOneMessageOnce() throws {
+        // Real transcripts write one row per content block with identical usage.
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [
+            usageRow("s1", 30, messageID: "m1", input: 2, output: 551),
+            usageRow("s1", 29, messageID: "m1", input: 2, output: 551),
+            usageRow("s1", 28, messageID: "m1", input: 2, output: 551),
+        ])
+
+        #expect(try fetch(fixture)["s1"]?.usage == TokenUsage(input: 2, output: 551))
+    }
+
+    @Test func sumsDistinctMessagesAndAllCounters() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [
+            usageRow("s1", 30, messageID: "m1", input: 2, output: 100, cacheRead: 1000, cacheWrite: 50, thinking: 7),
+            usageRow("s1", 20, messageID: "m2", input: 3, output: 200, cacheRead: 2000, cacheWrite: 0, thinking: 3),
+        ])
+
+        #expect(try fetch(fixture)["s1"]?.usage == TokenUsage(
+            input: 5, output: 300, reasoning: 10, cacheRead: 3000, cacheWrite: 50))
+    }
+
+    @Test func rowsWithoutUsageGiveNoUsageAndNoCost() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [assistant("s1", 10, stop: "end_turn")])
+
+        let session = try #require(try fetch(fixture)["s1"])
+        #expect(session.usage == nil)
+        #expect(session.cost == nil)
     }
 }
 

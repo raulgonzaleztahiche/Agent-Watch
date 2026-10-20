@@ -19,7 +19,8 @@ public final class OpenCodeSource: AgentSource {
     }
 
     private static let query = """
-        SELECT id, parent_id, agent, title, model, time_created, time_updated, idle_outcome, time_idle
+        SELECT id, parent_id, agent, title, model, time_created, time_updated, idle_outcome, time_idle,
+               cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write
         FROM session_v2
         WHERE time_updated >= ?
         ORDER BY time_created DESC
@@ -89,8 +90,27 @@ public final class OpenCodeSource: AgentSource {
             model: text(statement, 4).flatMap(decodeModel),
             status: status,
             startedAt: date(statement, 5),
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            usage: usage(statement),
+            cost: cost(statement)
         )
+    }
+
+    private static func usage(_ statement: OpaquePointer?) -> TokenUsage? {
+        let usage = TokenUsage(
+            input: Int(sqlite3_column_int64(statement, 10)),
+            output: Int(sqlite3_column_int64(statement, 11)),
+            reasoning: Int(sqlite3_column_int64(statement, 12)),
+            cacheRead: Int(sqlite3_column_int64(statement, 13)),
+            cacheWrite: Int(sqlite3_column_int64(statement, 14))
+        )
+        return usage.isEmpty ? nil : usage
+    }
+
+    /// OpenCode stores 0 when it has no price for the model (e.g. subscription plans).
+    private static func cost(_ statement: OpaquePointer?) -> Double? {
+        let value = sqlite3_column_double(statement, 9)
+        return value > 0 ? value : nil
     }
 
     private static func subagentStatus(outcome: String?) -> AgentStatus {

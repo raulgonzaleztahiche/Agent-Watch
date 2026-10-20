@@ -48,6 +48,11 @@ public struct Agent: Sendable, Equatable, Identifiable {
     public let status: AgentStatus
     public let startedAt: Date
     public let updatedAt: Date
+    /// Tokens used by this session or subagent alone (children are not included).
+    public let usage: TokenUsage?
+    /// Cost in USD as reported by the tool. `nil` when the tool does not report it
+    /// (Claude Code) or reports zero (subscription plans); never estimated.
+    public let cost: Double?
 
     public var isMainSession: Bool { parentSessionID == nil }
 
@@ -60,7 +65,9 @@ public struct Agent: Sendable, Equatable, Identifiable {
         model: ModelRef?,
         status: AgentStatus,
         startedAt: Date,
-        updatedAt: Date
+        updatedAt: Date,
+        usage: TokenUsage? = nil,
+        cost: Double? = nil
     ) {
         self.id = id
         self.tool = tool
@@ -71,6 +78,8 @@ public struct Agent: Sendable, Equatable, Identifiable {
         self.status = status
         self.startedAt = startedAt
         self.updatedAt = updatedAt
+        self.usage = usage
+        self.cost = cost
     }
 }
 

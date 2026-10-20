@@ -76,7 +76,8 @@ public final class ClaudeCodeSource: AgentSource {
             model: transcript.model.map(Self.modelRef),
             status: status,
             startedAt: transcript.startedAt,
-            updatedAt: transcript.updatedAt
+            updatedAt: transcript.updatedAt,
+            usage: transcript.usage.isEmpty ? nil : transcript.usage
         )
     }
 
@@ -100,7 +101,8 @@ public final class ClaudeCodeSource: AgentSource {
             model: transcript.model.map(Self.modelRef),
             status: status,
             startedAt: transcript.startedAt,
-            updatedAt: transcript.updatedAt
+            updatedAt: transcript.updatedAt,
+            usage: transcript.usage.isEmpty ? nil : transcript.usage
         )
     }
 
@@ -140,6 +142,7 @@ public final class ClaudeCodeSource: AgentSource {
         let agentID: String?
         let model: String?
         let title: String?
+        let usage: TokenUsage
         let lastStopReason: String?
         let userWroteAfterAssistant: Bool
         let startedAt: Date
@@ -170,6 +173,8 @@ public final class ClaudeCodeSource: AgentSource {
         var lastPrompt: String?
         var lastStopReason: String?
         var userWroteAfterAssistant = false
+        // A message is written once per content block with identical usage: keep one per id.
+        var usageByMessageID: [String: TokenUsage] = [:]
         var startedAt: Date?
         var updatedAt: Date?
 
@@ -187,6 +192,9 @@ public final class ClaudeCodeSource: AgentSource {
                 if let message = row["message"] as? [String: Any] {
                     model = message["model"] as? String ?? model
                     lastStopReason = message["stop_reason"] as? String
+                    if let id = message["id"] as? String, let raw = message["usage"] as? [String: Any] {
+                        usageByMessageID[id] = Self.tokenUsage(from: raw)
+                    }
                 }
                 userWroteAfterAssistant = false
             case "user":
@@ -206,8 +214,18 @@ public final class ClaudeCodeSource: AgentSource {
         return Transcript(
             modifiedAt: modifiedAt, size: size, sessionID: sessionID, agentID: agentID,
             model: model, title: customTitle ?? aiTitle ?? lastPrompt,
+            usage: usageByMessageID.values.reduce(TokenUsage(), +),
             lastStopReason: lastStopReason, userWroteAfterAssistant: userWroteAfterAssistant,
             startedAt: startedAt, updatedAt: updatedAt
+        )
+    }
+
+    private static func tokenUsage(from raw: [String: Any]) -> TokenUsage {
+        func count(_ key: String) -> Int { (raw[key] as? NSNumber)?.intValue ?? 0 }
+        let thinking = ((raw["output_tokens_details"] as? [String: Any])?["thinking_tokens"] as? NSNumber)?.intValue ?? 0
+        return TokenUsage(
+            input: count("input_tokens"), output: count("output_tokens"), reasoning: thinking,
+            cacheRead: count("cache_read_input_tokens"), cacheWrite: count("cache_creation_input_tokens")
         )
     }
 }

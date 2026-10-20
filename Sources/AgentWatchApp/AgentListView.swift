@@ -94,14 +94,24 @@ private struct AgentRowView: View {
                 }
             }
             Spacer(minLength: 8)
-            Text(agent.startedAt, style: .relative)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(agent.startedAt, style: .relative)
+                if let usage = agent.usage {
+                    Text(usageLine(usage, cost: agent.cost)).help(usage.detail)
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
         }
         .padding(.leading, 12 + CGFloat(row.depth) * 18)
         .padding(.trailing, 12)
         .padding(.vertical, 4)
     }
+}
+
+private func usageLine(_ usage: TokenUsage, cost: Double?) -> String {
+    guard let cost else { return usage.summary }
+    return usage.summary + " · " + String(format: "$%.2f", cost)
 }
 
 private extension AgentStatus {

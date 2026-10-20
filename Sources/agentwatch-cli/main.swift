@@ -50,6 +50,7 @@ func printNode(_ node: AgentNode, indent: String) {
         pad(label, 26),
         pad(agent.model?.displayName ?? "-", 30),
         pad(agent.startedAt.formatted(started), 14),
+        pad(agent.usage?.summary ?? "-", 24),
         TitleFormatter.clean(agent.title)
     )
     for child in node.children {
@@ -57,7 +58,7 @@ func printNode(_ node: AgentNode, indent: String) {
     }
 }
 
-print(pad("TOOL", 12), pad("STATUS", 12), pad("AGENT", 26), pad("MODEL", 30), pad("STARTED", 14), "TITLE")
+print(pad("TOOL", 12), pad("STATUS", 12), pad("AGENT", 26), pad("MODEL", 30), pad("STARTED", 14), pad("TOKENS", 24), "TITLE")
 for node in AgentTree.build(agents) {
     printNode(node, indent: "")
 }
