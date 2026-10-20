@@ -18,8 +18,14 @@ public final class OpenCodeSource: AgentSource {
         self.databaseURL = databaseURL
     }
 
+    /// A session can be stored without its model; the latest assistant message then tells which one it used.
     private static let query = """
-        SELECT id, parent_id, agent, title, model, time_created, time_updated, idle_outcome, time_idle,
+        SELECT id, parent_id, agent, title,
+               CASE WHEN model IS NULL OR model IN ('', 'null') THEN
+                 (SELECT json_extract(m.data, '$.model') FROM session_message m
+                  WHERE m.session_id = session_v2.id AND m.type = 'assistant' ORDER BY m.seq DESC LIMIT 1)
+               ELSE model END,
+               time_created, time_updated, idle_outcome, time_idle,
                cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, directory
         FROM session_v2
         WHERE time_updated >= ?

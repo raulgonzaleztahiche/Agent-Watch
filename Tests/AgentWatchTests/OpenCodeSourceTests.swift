@@ -64,12 +64,12 @@ private final class OpenCodeFixture {
     func insertMessage(
         type: String = "assistant", model: (id: String, provider: String, variant: String)? = ("gpt-6-luna", "openai", "high"),
         input: Int = 0, output: Int = 0, reasoning: Int = 0, cacheRead: Int = 0, cacheWrite: Int = 0,
-        cost: Double = 0, created: Double
+        cost: Double = 0, created: Double, session: String = "s"
     ) {
         messageCount += 1
         let modelJSON = model.map { #""model":{"id":"\#($0.id)","providerID":"\#($0.provider)","variant":"\#($0.variant)"},"# } ?? ""
         let data = "{" + modelJSON + #""cost":\#(cost),"tokens":{"input":\#(input),"output":\#(output),"reasoning":\#(reasoning),"cache":{"read":\#(cacheRead),"write":\#(cacheWrite)}}}"#
-        exec("INSERT INTO session_message VALUES ('m\(messageCount)', 's', '\(type)', \(messageCount), \(Int64(created * 1000)), \(Int64(created * 1000)), '\(data)')")
+        exec("INSERT INTO session_message VALUES ('m\(messageCount)', '\(session)', '\(type)', \(messageCount), \(Int64(created * 1000)), \(Int64(created * 1000)), '\(data)')")
     }
 
     private func exec(_ statement: String) {
@@ -158,6 +158,34 @@ private func fetch(_ fixture: OpenCodeFixture, since: Date = .distantPast) throw
         let main = try #require(try fetch(fixture)["main"])
         #expect(main.name == "main")
         #expect(main.isMainSession)
+    }
+
+    @Test func aSessionStoredWithoutAModelTakesTheOneOfItsLatestAssistantMessage() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insert(id: "nomodel", model: nil, updated: t - 60, idle: t - 60, outcome: "succeeded")
+        fixture.insertMessage(model: ("old-model", "openai", "default"), input: 1, created: t - 200, session: "nomodel")
+        fixture.insertMessage(model: ("minimax-m3.1-flash-free", "opencode", "default"), input: 1, created: t - 100, session: "nomodel")
+
+        let session = try #require(try fetch(fixture)["nomodel"])
+        #expect(session.model == ModelRef(provider: "opencode", id: "minimax-m3.1-flash-free", variant: "default"))
+    }
+
+    @Test func aSessionKeepsItsOwnModelWhenItHasOne() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insert(id: "own", updated: t - 60, idle: t - 60, outcome: "succeeded")
+        fixture.insertMessage(model: ("other", "openai", "default"), input: 1, created: t - 100, session: "own")
+
+        #expect(try fetch(fixture)["own"]?.model?.id == "gpt-6-luna")
+    }
+
+    @Test func aSessionWithoutAModelAndWithoutMessagesStaysUnknown() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insert(id: "empty", model: nil, updated: t - 60, idle: t - 60, outcome: nil)
+        fixture.insert(id: "null-text", model: "null", updated: t - 60, idle: t - 60, outcome: nil)
+
+        let agents = try fetch(fixture)
+        #expect(agents["empty"]?.model == nil)
+        #expect(agents["null-text"]?.model == nil)
     }
 
     @Test func malformedModelBecomesNil() throws {
