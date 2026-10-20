@@ -69,7 +69,8 @@ public final class ClaudeCodeSource: AgentSource {
     // MARK: - Mapping
 
     private func mainSession(at url: URL, now: Date) -> Agent? {
-        guard let transcript = cachedTranscript(at: url) else { return nil }
+        // A transcript with only local commands (/usage, /clear...) never talked to a model: not a session.
+        guard let transcript = cachedTranscript(at: url), transcript.isConversation else { return nil }
         let waitingForModel = transcript.lastStopReason != "end_turn" || transcript.userWroteAfterAssistant
         let status: AgentStatus =
             waitingForModel && ActivityPolicy.isRecent(transcript.updatedAt, now: now) ? .running : .idle
@@ -162,6 +163,8 @@ public final class ClaudeCodeSource: AgentSource {
         let title: String?
         let usage: TokenUsage
         let messages: [Message]
+        /// A model answered, or the user sent a real prompt that is still waiting for its answer.
+        let isConversation: Bool
         let lastStopReason: String?
         let userWroteAfterAssistant: Bool
         let startedAt: Date
@@ -193,6 +196,8 @@ public final class ClaudeCodeSource: AgentSource {
         var lastPrompt: String?
         var lastStopReason: String?
         var userWroteAfterAssistant = false
+        var hasAssistantMessage = false
+        var hasRealPrompt = false
         // A message is written once per content block with identical usage: keep one per id.
         var messagesByID: [String: Message] = [:]
         var rowDate: Date?
@@ -213,6 +218,7 @@ public final class ClaudeCodeSource: AgentSource {
             }
             switch row["type"] as? String {
             case "assistant":
+                hasAssistantMessage = true
                 // Only assistant rows carry the agent's own model.
                 if let message = row["message"] as? [String: Any] {
                     model = message["model"] as? String ?? model
@@ -227,6 +233,7 @@ public final class ClaudeCodeSource: AgentSource {
                 userWroteAfterAssistant = false
             case "user":
                 userWroteAfterAssistant = true
+                if !Self.isLocalCommand(row) { hasRealPrompt = true }
             case "custom-title":
                 customTitle = row["customTitle"] as? String ?? customTitle
             case "ai-title":
@@ -244,9 +251,18 @@ public final class ClaudeCodeSource: AgentSource {
             directory: directory, model: model, title: customTitle ?? aiTitle ?? lastPrompt,
             usage: messagesByID.values.map(\.usage).reduce(TokenUsage(), +),
             messages: Array(messagesByID.values),
+            isConversation: hasAssistantMessage || hasRealPrompt,
             lastStopReason: lastStopReason, userWroteAfterAssistant: userWroteAfterAssistant,
             startedAt: startedAt, updatedAt: updatedAt
         )
+    }
+
+    /// Rows Claude Code writes for slash commands handled locally (`/usage`, `/clear`...) and their caveats.
+    private static func isLocalCommand(_ row: [String: Any]) -> Bool {
+        if row["isMeta"] as? Bool == true { return true }
+        let content = (row["message"] as? [String: Any])?["content"]
+        let text = (content as? String) ?? ((content as? [[String: Any]])?.first?["text"] as? String) ?? ""
+        return text.hasPrefix("<command-name>") || text.hasPrefix("<local-command")
     }
 
     private static func tokenUsage(from raw: [String: Any]) -> TokenUsage {

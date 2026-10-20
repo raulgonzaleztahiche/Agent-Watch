@@ -188,6 +188,52 @@ private func fetch(_ fixture: ClaudeFixture, since: Date = .distantPast) throws 
     }
 }
 
+@Suite struct ClaudeCodeLocalCommandTests {
+    /// What `claude -p "/usage"` writes: a meta caveat and the command itself, no model answer.
+    private func localCommandRows(_ session: String) -> [[String: Any]] {
+        [
+            ["type": "user", "sessionId": session, "timestamp": stamp(30), "isMeta": true,
+             "message": ["role": "user", "content": "<local-command-caveat>Caveat: the messages below...</local-command-caveat>"]],
+            ["type": "user", "sessionId": session, "timestamp": stamp(29),
+             "message": ["role": "user", "content": "<command-name>/usage</command-name>\n<command-args></command-args>"]],
+            ["type": "system", "sessionId": session, "timestamp": stamp(28), "subtype": "local_command",
+             "content": "<local-command-stdout>Current session: 40% used</local-command-stdout>"],
+        ]
+    }
+
+    @Test func aSessionWithOnlyLocalCommandsIsNotListed() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("local", rows: localCommandRows("local"))
+        try fixture.writeMainSession("real", rows: [user("real", 20), assistant("real", 10, stop: "end_turn")])
+
+        let agents = try fetch(fixture)
+        #expect(Set(agents.keys) == ["real"])
+    }
+
+    @Test func aFreshPromptStillWaitingForItsFirstAnswerIsListedAsRunning() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("fresh", rows: localCommandRows("fresh") + [user("fresh", 3)])
+
+        let session = try #require(try fetch(fixture)["fresh"])
+        #expect(session.status == .running)
+        #expect(session.model == nil)
+    }
+
+    @Test func aLocalCommandAfterARealConversationDoesNotHideIt() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [user("s1", 60), assistant("s1", 50, stop: "end_turn")] + localCommandRows("s1"))
+
+        #expect(try fetch(fixture)["s1"] != nil)
+    }
+
+    @Test func localCommandSessionsContributeNoUsage() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("local", rows: localCommandRows("local"))
+
+        #expect(try fixture.source().fetchUsage(since: .distantPast).isEmpty)
+    }
+}
+
 @Suite struct ClaudeCodeDirectoryTests {
     @Test func takesTheProjectFromTheLatestCwdOfTheTranscript() throws {
         let fixture = try ClaudeFixture()
