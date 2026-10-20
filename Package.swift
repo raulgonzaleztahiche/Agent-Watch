@@ -20,5 +20,11 @@ let package = Package(
             name: "agentwatch-cli",
             dependencies: ["AgentCore", "Adapters"]
         ),
+        // Fixtures are synthetic: they mirror the real formats, never copy real transcripts.
+        .testTarget(
+            name: "AgentWatchTests",
+            dependencies: ["AgentCore", "Adapters"],
+            linkerSettings: [.linkedLibrary("sqlite3")]
+        ),
     ]
 )
