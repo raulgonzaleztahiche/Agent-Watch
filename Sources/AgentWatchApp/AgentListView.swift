@@ -38,7 +38,7 @@ struct AgentListView: View {
                 .frame(maxWidth: .infinity)
                 .padding(24)
         } else {
-            AgentRowsList(sections: store.sections, showRecent: $showRecent)
+            AgentRowsList(sections: store.sections, now: store.now, showRecent: $showRecent)
         }
     }
 
@@ -82,6 +82,7 @@ struct AgentRowsList: View {
     nonisolated static let maxHeight: CGFloat = 420
 
     let sections: AgentSections
+    let now: Date
     @Binding var showRecent: Bool
 
     private enum Item: Identifiable {
@@ -150,7 +151,7 @@ struct AgentRowsList: View {
                 .padding(.horizontal, 12)
                 .frame(height: Self.rowHeight, alignment: .leading)
         case .row(let row):
-            AgentRowView(row: row)
+            AgentRowView(row: row, now: now)
         case .recentHeader:
             Button {
                 showRecent.toggle()
@@ -184,6 +185,7 @@ private extension AgentRowsList {
 
 private struct AgentRowView: View {
     let row: AgentRow
+    let now: Date
 
     var body: some View {
         let agent = row.agent
@@ -209,7 +211,7 @@ private struct AgentRowView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 1) {
-                Text(agent.startedAt, style: .relative)
+                Text(ActivityLabel.text(for: agent, now: now))
                 if let usage = agent.usage {
                     Text(usageLine(usage, cost: agent.cost)).help(usage.detail)
                 }
