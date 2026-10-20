@@ -7,7 +7,7 @@ import Observation
 @MainActor
 @Observable
 final class AgentStore {
-    private(set) var rows: [AgentRow] = []
+    private(set) var sections = AgentSections(active: [], recent: [], recentTreeCount: 0)
     private(set) var summary = AgentSummary([])
     private(set) var errors: [String] = []
     /// Failures and interruptions always notify; a clean finish only when this is on.
@@ -44,7 +44,7 @@ final class AgentStore {
 
     private func refresh() async {
         let result = await repository.fetch(window: window)
-        rows = AgentTree.rows(result.agents)
+        sections = AgentTree.sections(result.agents)
         summary = AgentSummary(result.agents)
         errors = result.errors
         for event in detector.observe(result.agents) where event.isAlert || notifyOnFinish {

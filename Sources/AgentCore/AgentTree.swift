@@ -17,6 +17,19 @@ public struct AgentRow: Sendable, Equatable, Identifiable {
     }
 }
 
+public struct AgentSections: Sendable, Equatable {
+    public let active: [AgentRow]
+    public let recent: [AgentRow]
+    /// Number of top-level entries in `recent` (what the user sees as "N recent").
+    public let recentTreeCount: Int
+
+    public init(active: [AgentRow], recent: [AgentRow], recentTreeCount: Int) {
+        self.active = active
+        self.recent = recent
+        self.recentTreeCount = recentTreeCount
+    }
+}
+
 public enum AgentTree {
     /// Nests subagents under their parent session. A subagent whose parent is
     /// not in `agents` becomes a top-level node so it is never hidden.
@@ -39,11 +52,29 @@ public enum AgentTree {
 
     /// Depth-first rows: each session followed by its subagents.
     public static func rows(_ agents: [Agent]) -> [AgentRow] {
-        func flatten(_ node: AgentNode, depth: Int) -> [AgentRow] {
-            [AgentRow(agent: node.agent, depth: depth)]
-                + node.children.flatMap { flatten($0, depth: depth + 1) }
-        }
-        return build(agents).flatMap { flatten($0, depth: 0) }
+        build(agents).flatMap { flatten($0, depth: 0) }
+    }
+
+    /// Splits the tree into what is running now and everything else. A tree is active when
+    /// any of its agents is running, so an idle session stays with its running subagent.
+    public static func sections(_ agents: [Agent]) -> AgentSections {
+        let nodes = build(agents)
+        let active = nodes.filter(isActive)
+        let recent = nodes.filter { !isActive($0) }
+        return AgentSections(
+            active: active.flatMap { flatten($0, depth: 0) },
+            recent: recent.flatMap { flatten($0, depth: 0) },
+            recentTreeCount: recent.count
+        )
+    }
+
+    private static func isActive(_ node: AgentNode) -> Bool {
+        node.agent.status == .running || node.children.contains(where: isActive)
+    }
+
+    private static func flatten(_ node: AgentNode, depth: Int) -> [AgentRow] {
+        [AgentRow(agent: node.agent, depth: depth)]
+            + node.children.flatMap { flatten($0, depth: depth + 1) }
     }
 
     private static func sorted(_ agents: [Agent]) -> [Agent] {

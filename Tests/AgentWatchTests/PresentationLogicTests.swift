@@ -70,6 +70,59 @@ private func agent(
     }
 }
 
+@Suite struct AgentSectionsTests {
+    @Test func separatesRunningTreesFromRecentOnes() {
+        let sections = AgentTree.sections([
+            agent("busy", status: .running, startedAt: 1),
+            agent("idle", status: .idle, startedAt: 2),
+            agent("done-sub", parent: "idle", status: .succeeded, startedAt: 3),
+        ])
+
+        #expect(sections.active.map(\.agent.id) == ["busy"])
+        #expect(sections.recent.map(\.agent.id) == ["idle", "done-sub"])
+        #expect(sections.recentTreeCount == 1)
+    }
+
+    @Test func idleSessionWithARunningSubagentIsActiveAsAWhole() {
+        let sections = AgentTree.sections([
+            agent("main", status: .idle, startedAt: 1),
+            agent("sub", parent: "main", status: .running, startedAt: 2),
+            agent("old-sub", parent: "main", status: .succeeded, startedAt: 3),
+        ])
+
+        #expect(sections.active.map(\.agent.id) == ["main", "old-sub", "sub"])
+        #expect(sections.active.map(\.depth) == [0, 1, 1])
+        #expect(sections.recent.isEmpty)
+    }
+
+    @Test func aRunningGrandchildMakesTheWholeTreeActive() {
+        let sections = AgentTree.sections([
+            agent("main", status: .idle, startedAt: 1),
+            agent("child", parent: "main", status: .succeeded, startedAt: 2),
+            agent("grandchild", parent: "child", status: .running, startedAt: 3),
+        ])
+
+        #expect(sections.active.count == 3)
+        #expect(sections.recent.isEmpty)
+    }
+
+    @Test func staleAndFailedAgentsAreRecent() {
+        let sections = AgentTree.sections([
+            agent("a", status: .unknown, startedAt: 1),
+            agent("b", status: .failed, startedAt: 2),
+        ])
+
+        #expect(sections.active.isEmpty)
+        #expect(sections.recentTreeCount == 2)
+    }
+
+    @Test func noAgentsGivesEmptySections() {
+        let sections = AgentTree.sections([])
+
+        #expect(sections.active.isEmpty && sections.recent.isEmpty && sections.recentTreeCount == 0)
+    }
+}
+
 @Suite struct TitleFormatterTests {
     @Test func dropsLegacySubagentSuffix() {
         #expect(TitleFormatter.clean("Map checkout (@explore subagent)") == "Map checkout")

@@ -5,6 +5,7 @@ import SwiftUI
 struct AgentListView: View {
     let store: AgentStore
     let launchAtLogin: LaunchAtLogin
+    @State private var showRecent = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -31,13 +32,13 @@ struct AgentListView: View {
 
     @ViewBuilder
     private var content: some View {
-        if store.rows.isEmpty {
+        if store.sections.active.isEmpty && store.sections.recent.isEmpty {
             Text("No activity in the last 24 hours")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(24)
         } else {
-            AgentRowsList(rows: store.rows)
+            AgentRowsList(sections: store.sections, showRecent: $showRecent)
         }
     }
 
@@ -69,29 +70,100 @@ struct AgentListView: View {
     }
 }
 
+/// Running agents first and highlighted; everything else folded under "Recent".
+///
 /// A `ScrollView` inside a window-style `MenuBarExtra` has no ideal height and collapses to
-/// zero, so the height is computed from the row count (rows have a fixed height).
+/// zero, so the height is computed from the items (each kind has a fixed height).
 struct AgentRowsList: View {
-    static let rowHeight: CGFloat = 44
-    static let verticalPadding: CGFloat = 4
-    static let maxHeight: CGFloat = 420
+    nonisolated static let rowHeight: CGFloat = 44
+    nonisolated static let headerHeight: CGFloat = 30
+    nonisolated static let verticalPadding: CGFloat = 4
+    nonisolated static let maxHeight: CGFloat = 420
 
-    let rows: [AgentRow]
+    let sections: AgentSections
+    @Binding var showRecent: Bool
 
-    static func height(forRowCount count: Int) -> CGFloat {
-        min(CGFloat(count) * rowHeight + 2 * verticalPadding, maxHeight)
+    private enum Item: Identifiable {
+        case runningHeader
+        case nothingRunning
+        case row(AgentRow)
+        case recentHeader
+
+        var id: String {
+            switch self {
+            case .runningHeader: "running-header"
+            case .nothingRunning: "nothing-running"
+            case .row(let row): row.id
+            case .recentHeader: "recent-header"
+            }
+        }
+
+        var height: CGFloat {
+            switch self {
+            case .runningHeader, .recentHeader: AgentRowsList.headerHeight
+            case .nothingRunning, .row: AgentRowsList.rowHeight
+            }
+        }
+    }
+
+    private var items: [Item] {
+        var items: [Item] = [.runningHeader]
+        items += sections.active.isEmpty ? [.nothingRunning] : sections.active.map(Item.row)
+        if sections.recentTreeCount > 0 {
+            items.append(.recentHeader)
+            if showRecent { items += sections.recent.map(Item.row) }
+        }
+        return items
     }
 
     var body: some View {
+        let items = items
+        let height = min(items.reduce(2 * Self.verticalPadding) { $0 + $1.height }, Self.maxHeight)
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(rows) { row in
-                    AgentRowView(row: row)
+                ForEach(items) { item in
+                    view(for: item)
                 }
             }
             .padding(.vertical, Self.verticalPadding)
         }
-        .frame(height: Self.height(forRowCount: rows.count))
+        .frame(height: height)
+    }
+
+    @ViewBuilder
+    private func view(for item: Item) -> some View {
+        switch item {
+        case .runningHeader:
+            HStack(spacing: 6) {
+                Circle().fill(.green).frame(width: 6, height: 6)
+                Text("RUNNING NOW").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .frame(height: Self.headerHeight)
+        case .nothingRunning:
+            Text("Nothing running right now")
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .frame(height: Self.rowHeight, alignment: .leading)
+        case .row(let row):
+            AgentRowView(row: row)
+        case .recentHeader:
+            Button {
+                showRecent.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: showRecent ? "chevron.down" : "chevron.right").font(.caption2)
+                    Text("RECENT · \(sections.recentTreeCount)").font(.caption.weight(.semibold))
+                    Spacer()
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .frame(height: Self.headerHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 
@@ -130,6 +202,7 @@ private struct AgentRowView: View {
         .padding(.leading, 12 + CGFloat(row.depth) * 18)
         .padding(.trailing, 12)
         .frame(height: AgentRowsList.rowHeight, alignment: .leading)
+        .background(agent.status == .running ? Color.green.opacity(0.14) : Color.clear)
     }
 }
 
