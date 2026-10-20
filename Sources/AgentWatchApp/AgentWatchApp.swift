@@ -1,39 +1,17 @@
 import AppKit
-import SwiftUI
 
 @main
-struct AgentWatchApp: App {
-    private let store: AgentStore
-    private let launchAtLogin = LaunchAtLogin()
-
-    init() {
+enum AgentWatchMain {
+    @MainActor
+    static func main() {
+        let app = NSApplication.shared
         // Menu bar only: no Dock icon, no app menu (also set by LSUIElement in the bundle).
-        NSApplication.shared.setActivationPolicy(.accessory)
+        app.setActivationPolicy(.accessory)
+
         let store = AgentStore()
+        let controller = StatusItemController(store: store, launchAtLogin: LaunchAtLogin())
         store.start()
-        self.store = store
-    }
 
-    var body: some Scene {
-        MenuBarExtra {
-            AgentListView(store: store, launchAtLogin: launchAtLogin)
-        } label: {
-            MenuBarLabel(store: store)
-        }
-        .menuBarExtraStyle(.window)
-    }
-}
-
-private struct MenuBarLabel: View {
-    let store: AgentStore
-
-    var body: some View {
-        let running = store.summary.totalRunning
-        HStack(spacing: 4) {
-            Image(nsImage: running > 0 ? MenuBarGlyph.active : MenuBarGlyph.idle)
-            if running > 0 {
-                Text("\(running)")
-            }
-        }
+        withExtendedLifetime(controller) { app.run() }
     }
 }

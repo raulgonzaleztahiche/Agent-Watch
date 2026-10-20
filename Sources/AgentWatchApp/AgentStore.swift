@@ -9,6 +9,8 @@ import Observation
 final class AgentStore {
     private(set) var sections = AgentSections(active: [], recent: [], recentTreeCount: 0)
     private(set) var summary = AgentSummary([])
+    /// Called on the main actor whenever the running counts change.
+    @ObservationIgnored var onSummaryChange: ((AgentSummary) -> Void)?
     private(set) var errors: [String] = []
     /// Failures and interruptions always notify; a clean finish only when this is on.
     var notifyOnFinish: Bool {
@@ -45,7 +47,11 @@ final class AgentStore {
     private func refresh() async {
         let result = await repository.fetch(window: window)
         sections = AgentTree.sections(result.agents)
-        summary = AgentSummary(result.agents)
+        let newSummary = AgentSummary(result.agents)
+        if newSummary != summary {
+            summary = newSummary
+            onSummaryChange?(newSummary)
+        }
         errors = result.errors
         for event in detector.observe(result.agents) where event.isAlert || notifyOnFinish {
             notifier.post(event)
