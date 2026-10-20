@@ -27,6 +27,18 @@ private func agent(
         #expect(summary.totalRunning == 3)
     }
 
+    @Test func textUsesSingularForOneAndPluralOtherwise() {
+        let one = AgentSummary([agent("m", status: .running), agent("s", parent: "m", status: .running)])
+        let many = AgentSummary([
+            agent("a", status: .running), agent("b", status: .running),
+            agent("s1", parent: "a", status: .running), agent("s2", parent: "a", status: .running),
+        ])
+
+        #expect(one.text == "1 session · 1 subagent running")
+        #expect(many.text == "2 sessions · 2 subagents running")
+        #expect(AgentSummary([]).text == "0 sessions · 0 subagents running")
+    }
+
     @Test func emptyListHasNothingRunning() {
         #expect(AgentSummary([]).totalRunning == 0)
     }

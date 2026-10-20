@@ -22,7 +22,7 @@ struct AgentListView: View {
         return HStack {
             Text("Agent Watch").font(.headline)
             Spacer()
-            Text("\(summary.runningSessions) sessions · \(summary.runningSubagents) subagents running")
+            Text(summary.text)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -37,15 +37,7 @@ struct AgentListView: View {
                 .frame(maxWidth: .infinity)
                 .padding(24)
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(store.rows) { row in
-                        AgentRowView(row: row)
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-            .frame(maxHeight: 420)
+            AgentRowsList(rows: store.rows)
         }
     }
 
@@ -68,6 +60,32 @@ struct AgentListView: View {
                 .keyboardShortcut("q")
         }
         .padding(10)
+    }
+}
+
+/// A `ScrollView` inside a window-style `MenuBarExtra` has no ideal height and collapses to
+/// zero, so the height is computed from the row count (rows have a fixed height).
+struct AgentRowsList: View {
+    static let rowHeight: CGFloat = 44
+    static let verticalPadding: CGFloat = 4
+    static let maxHeight: CGFloat = 420
+
+    let rows: [AgentRow]
+
+    static func height(forRowCount count: Int) -> CGFloat {
+        min(CGFloat(count) * rowHeight + 2 * verticalPadding, maxHeight)
+    }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(rows) { row in
+                    AgentRowView(row: row)
+                }
+            }
+            .padding(.vertical, Self.verticalPadding)
+        }
+        .frame(height: Self.height(forRowCount: rows.count))
     }
 }
 
@@ -105,7 +123,7 @@ private struct AgentRowView: View {
         }
         .padding(.leading, 12 + CGFloat(row.depth) * 18)
         .padding(.trailing, 12)
-        .padding(.vertical, 4)
+        .frame(height: AgentRowsList.rowHeight, alignment: .leading)
     }
 }
 
