@@ -22,7 +22,7 @@ private final class OpenCodeFixture {
                 time_created INTEGER, time_updated INTEGER, time_idle INTEGER, idle_outcome TEXT,
                 cost REAL DEFAULT 0, tokens_input INTEGER DEFAULT 0, tokens_output INTEGER DEFAULT 0,
                 tokens_reasoning INTEGER DEFAULT 0, tokens_cache_read INTEGER DEFAULT 0,
-                tokens_cache_write INTEGER DEFAULT 0
+                tokens_cache_write INTEGER DEFAULT 0, directory TEXT
             )
             """)
     }
@@ -37,6 +37,7 @@ private final class OpenCodeFixture {
         id: String, parent: String? = nil, agent: String? = "build", title: String? = "Task",
         model: String? = #"{"id":"gpt-6-luna","providerID":"openai","variant":"high"}"#,
         created: Double = 0, updated: Double, idle: Double?, outcome: String?,
+        directory: String? = nil,
         cost: Double = 0, tokens: (input: Int, output: Int, reasoning: Int, cacheRead: Int, cacheWrite: Int) = (0, 0, 0, 0, 0)
     ) {
         func sql(_ value: String?) -> String {
@@ -47,7 +48,7 @@ private final class OpenCodeFixture {
             INSERT INTO session_v2 VALUES (\(sql(id)), \(sql(parent)), \(sql(agent)), \(sql(title)), \
             \(sql(model)), \(ms(created)), \(ms(updated)), \(ms(idle)), \(sql(outcome)), \
             \(cost), \(tokens.input), \(tokens.output), \(tokens.reasoning), \(tokens.cacheRead), \
-            \(tokens.cacheWrite))
+            \(tokens.cacheWrite), \(sql(directory)))
             """)
     }
 
@@ -178,6 +179,19 @@ private func fetch(_ fixture: OpenCodeFixture, since: Date = .distantPast) throw
         let main = try #require(try fetch(fixture)["main"])
         #expect(main.cost == nil)
         #expect(main.usage?.input == 100)
+    }
+
+    @Test func readsTheWorkingDirectory() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insert(
+            id: "main", updated: t - 60, idle: t - 60, outcome: "succeeded", directory: "/Users/me/code/barracuda")
+        fixture.insert(id: "bare", updated: t - 60, idle: t - 60, outcome: "succeeded")
+
+        let agents = try fetch(fixture)
+        #expect(agents["main"]?.directory == "/Users/me/code/barracuda")
+        #expect(agents["main"]?.projectName == "barracuda")
+        #expect(agents["bare"]?.directory == nil)
+        #expect(agents["bare"]?.projectName == nil)
     }
 
     @Test func sessionWithoutTokensHasNoUsage() throws {

@@ -77,7 +77,8 @@ public final class ClaudeCodeSource: AgentSource {
             status: status,
             startedAt: transcript.startedAt,
             updatedAt: transcript.updatedAt,
-            usage: transcript.usage.isEmpty ? nil : transcript.usage
+            usage: transcript.usage.isEmpty ? nil : transcript.usage,
+            directory: transcript.directory
         )
     }
 
@@ -102,7 +103,8 @@ public final class ClaudeCodeSource: AgentSource {
             status: status,
             startedAt: transcript.startedAt,
             updatedAt: transcript.updatedAt,
-            usage: transcript.usage.isEmpty ? nil : transcript.usage
+            usage: transcript.usage.isEmpty ? nil : transcript.usage,
+            directory: transcript.directory
         )
     }
 
@@ -140,6 +142,7 @@ public final class ClaudeCodeSource: AgentSource {
         let size: Int
         let sessionID: String
         let agentID: String?
+        let directory: String?
         let model: String?
         let title: String?
         let usage: TokenUsage
@@ -167,6 +170,7 @@ public final class ClaudeCodeSource: AgentSource {
 
         var sessionID: String?
         var agentID: String?
+        var directory: String?
         var model: String?
         var customTitle: String?
         var aiTitle: String?
@@ -182,6 +186,8 @@ public final class ClaudeCodeSource: AgentSource {
             guard let row = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
             sessionID = sessionID ?? row["sessionId"] as? String
             agentID = agentID ?? row["agentId"] as? String
+            // The latest cwd: a session can move to another project (e.g. after a directory change).
+            directory = row["cwd"] as? String ?? directory
             if let stamp = row["timestamp"] as? String, let date = try? isoDate.parse(stamp) {
                 startedAt = startedAt ?? date
                 updatedAt = date
@@ -213,7 +219,7 @@ public final class ClaudeCodeSource: AgentSource {
         guard let sessionID, let startedAt, let updatedAt else { return nil }
         return Transcript(
             modifiedAt: modifiedAt, size: size, sessionID: sessionID, agentID: agentID,
-            model: model, title: customTitle ?? aiTitle ?? lastPrompt,
+            directory: directory, model: model, title: customTitle ?? aiTitle ?? lastPrompt,
             usage: usageByMessageID.values.reduce(TokenUsage(), +),
             lastStopReason: lastStopReason, userWroteAfterAssistant: userWroteAfterAssistant,
             startedAt: startedAt, updatedAt: updatedAt

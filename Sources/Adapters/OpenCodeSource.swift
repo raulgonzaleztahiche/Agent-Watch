@@ -20,7 +20,7 @@ public final class OpenCodeSource: AgentSource {
 
     private static let query = """
         SELECT id, parent_id, agent, title, model, time_created, time_updated, idle_outcome, time_idle,
-               cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write
+               cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, directory
         FROM session_v2
         WHERE time_updated >= ?
         ORDER BY time_created DESC
@@ -92,7 +92,8 @@ public final class OpenCodeSource: AgentSource {
             startedAt: date(statement, 5),
             updatedAt: updatedAt,
             usage: usage(statement),
-            cost: cost(statement)
+            cost: cost(statement),
+            directory: text(statement, 15)
         )
     }
 

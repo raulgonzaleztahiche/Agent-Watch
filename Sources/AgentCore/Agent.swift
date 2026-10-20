@@ -53,6 +53,15 @@ public struct Agent: Sendable, Equatable, Identifiable {
     /// Cost in USD as reported by the tool. `nil` when the tool does not report it
     /// (Claude Code) or reports zero (subscription plans); never estimated.
     public let cost: Double?
+    /// Working directory the session or subagent runs in.
+    public let directory: String?
+
+    /// Last path component of `directory`, e.g. "barracuda".
+    public var projectName: String? {
+        guard let directory else { return nil }
+        let name = URL(fileURLWithPath: directory).lastPathComponent
+        return name.isEmpty || name == "/" ? nil : name
+    }
 
     public var isMainSession: Bool { parentSessionID == nil }
 
@@ -70,7 +79,8 @@ public struct Agent: Sendable, Equatable, Identifiable {
         startedAt: Date,
         updatedAt: Date,
         usage: TokenUsage? = nil,
-        cost: Double? = nil
+        cost: Double? = nil,
+        directory: String? = nil
     ) {
         self.id = id
         self.tool = tool
@@ -83,6 +93,7 @@ public struct Agent: Sendable, Equatable, Identifiable {
         self.updatedAt = updatedAt
         self.usage = usage
         self.cost = cost
+        self.directory = directory
     }
 }
 

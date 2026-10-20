@@ -184,6 +184,41 @@ private func fetch(_ fixture: ClaudeFixture, since: Date = .distantPast) throws 
     }
 }
 
+@Suite struct ClaudeCodeDirectoryTests {
+    @Test func takesTheProjectFromTheLatestCwdOfTheTranscript() throws {
+        let fixture = try ClaudeFixture()
+        // A session can start in a scratch folder and move to the real project.
+        var first = user("s1", 30)
+        first["cwd"] = "/Users/me/scratch-2026-10-20"
+        var later = assistant("s1", 10, stop: "end_turn")
+        later["cwd"] = "/Users/me/code/barracuda"
+        let noCwd = user("s1", 5)
+        try fixture.writeMainSession("s1", rows: [first, later, noCwd])
+
+        let session = try #require(try fetch(fixture)["s1"])
+        #expect(session.directory == "/Users/me/code/barracuda")
+        #expect(session.projectName == "barracuda")
+    }
+
+    @Test func subagentsCarryTheirOwnCwd() throws {
+        let fixture = try ClaudeFixture()
+        var row = user("s1", 20, agent: "a1")
+        row["cwd"] = "/Users/me/code/demo"
+        try fixture.writeSubagent(
+            "a1", session: "s1", rows: [row, assistant("s1", 10, stop: "end_turn", agent: "a1")],
+            meta: ["agentType": "Explore", "toolUseId": "t"])
+
+        #expect(try fetch(fixture)["a1"]?.projectName == "demo")
+    }
+
+    @Test func missingCwdMeansNoProject() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [user("s1", 10)])
+
+        #expect(try fetch(fixture)["s1"]?.directory == nil)
+    }
+}
+
 @Suite struct ClaudeCodeUsageTests {
     @Test func countsRepeatedContentBlocksOfOneMessageOnce() throws {
         // Real transcripts write one row per content block with identical usage.

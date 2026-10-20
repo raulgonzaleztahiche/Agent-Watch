@@ -200,8 +200,11 @@ private struct AgentRowView: View {
                         .foregroundStyle(.secondary)
                 }
                 let title = TitleFormatter.clean(agent.title, maxLength: 60)
-                if !title.isEmpty {
-                    Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if agent.projectName != nil || !title.isEmpty {
+                    detailLine(project: agent.projectName, title: title)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .help(agent.directory ?? "")
                 }
             }
             Spacer(minLength: 8)
@@ -218,6 +221,17 @@ private struct AgentRowView: View {
         .padding(.trailing, 12)
         .frame(height: AgentRowsList.rowHeight, alignment: .leading)
         .background(agent.status == .running ? Color.green.opacity(0.14) : Color.clear)
+    }
+}
+
+/// "project · title", with the project in a stronger tone so sessions are easy to tell apart.
+private func detailLine(project: String?, title: String) -> Text {
+    let projectText = project.map { Text($0).fontWeight(.medium).foregroundStyle(.primary) }
+    let titleText = Text(title).foregroundStyle(.secondary)
+    switch (projectText, title.isEmpty) {
+    case (let projectText?, false): return projectText + Text(" · ").foregroundStyle(.secondary) + titleText
+    case (let projectText?, true): return projectText
+    case (nil, _): return titleText
     }
 }
 
