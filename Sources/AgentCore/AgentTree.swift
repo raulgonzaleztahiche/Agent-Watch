@@ -5,6 +5,18 @@ public struct AgentNode: Sendable, Equatable {
     public let children: [AgentNode]
 }
 
+/// One line of the flattened tree, ready for a list.
+public struct AgentRow: Sendable, Equatable, Identifiable {
+    public let agent: Agent
+    public let depth: Int
+    public var id: String { "\(agent.tool.rawValue):\(agent.id)" }
+
+    public init(agent: Agent, depth: Int) {
+        self.agent = agent
+        self.depth = depth
+    }
+}
+
 public enum AgentTree {
     /// Nests subagents under their parent session. A subagent whose parent is
     /// not in `agents` becomes a top-level node so it is never hidden.
@@ -23,6 +35,15 @@ public enum AgentTree {
             agent.parentSessionID.map { !ids.contains($0) } ?? true
         }
         return sorted(roots).map(node)
+    }
+
+    /// Depth-first rows: each session followed by its subagents.
+    public static func rows(_ agents: [Agent]) -> [AgentRow] {
+        func flatten(_ node: AgentNode, depth: Int) -> [AgentRow] {
+            [AgentRow(agent: node.agent, depth: depth)]
+                + node.children.flatMap { flatten($0, depth: depth + 1) }
+        }
+        return build(agents).flatMap { flatten($0, depth: 0) }
     }
 
     private static func sorted(_ agents: [Agent]) -> [Agent] {

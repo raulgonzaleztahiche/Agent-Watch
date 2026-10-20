@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "agentwatch-cli", targets: ["agentwatch-cli"]),
+        .executable(name: "AgentWatchApp", targets: ["AgentWatchApp"]),
     ],
     targets: [
         // Domain: model and port. No file system, no SQLite.
@@ -18,6 +19,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "agentwatch-cli",
+            dependencies: ["AgentCore", "Adapters"]
+        ),
+        // Menu bar UI: thin glue over AgentCore, no rules of its own.
+        .executableTarget(
+            name: "AgentWatchApp",
             dependencies: ["AgentCore", "Adapters"]
         ),
         // Fixtures are synthetic: they mirror the real formats, never copy real transcripts.

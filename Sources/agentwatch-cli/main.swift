@@ -41,15 +41,6 @@ func pad(_ text: String, _ width: Int) -> String {
     text.count >= width ? String(text.prefix(width - 1)) + "…" : text + String(repeating: " ", count: width - text.count)
 }
 
-/// Drops the legacy " (@explore subagent)" suffix and keeps one line.
-func cleanTitle(_ title: String?) -> String {
-    guard var text = title?.split(separator: "\n").first.map(String.init) else { return "" }
-    if let range = text.range(of: #" \(@[\w-]+ subagent\)$"#, options: .regularExpression) {
-        text.removeSubrange(range)
-    }
-    return text.count > 70 ? String(text.prefix(69)) + "…" : text
-}
-
 func printNode(_ node: AgentNode, indent: String) {
     let agent = node.agent
     let label = indent + (agent.isMainSession ? "● " : "└─ ") + agent.name
@@ -59,7 +50,7 @@ func printNode(_ node: AgentNode, indent: String) {
         pad(label, 26),
         pad(agent.model?.displayName ?? "-", 30),
         pad(agent.startedAt.formatted(started), 14),
-        cleanTitle(agent.title)
+        TitleFormatter.clean(agent.title)
     )
     for child in node.children {
         printNode(child, indent: indent + "   ")
