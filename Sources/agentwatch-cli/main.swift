@@ -3,9 +3,11 @@ import AgentCore
 import Foundation
 
 // Spike: print main sessions and their subagents as a tree, newest first.
-// Usage: agentwatch-cli [--hours N]   (default: 24)
+// Usage: agentwatch-cli [--hours N] [--usage]   (default: 24 h, agent tree)
+//   --usage  prints token usage per model for today and the last 7 days instead
 
-let usage = "usage: agentwatch-cli [--hours N]"
+let usage = "usage: agentwatch-cli [--hours N] [--usage]"
+var showUsage = false
 var hours: Double = 24
 var arguments = CommandLine.arguments.dropFirst()
 while let argument = arguments.popFirst() {
@@ -16,10 +18,17 @@ while let argument = arguments.popFirst() {
             exit(2)
         }
         hours = value
+    case "--usage":
+        showUsage = true
     default:
         FileHandle.standardError.write(Data("\(usage)\n".utf8))
         exit(2)
     }
+}
+
+if showUsage {
+    printUsageReport()
+    exit(0)
 }
 
 let now = Date()
@@ -71,4 +80,33 @@ for tool in AgentTool.allCases {
     let subagents = own.filter { !$0.isMainSession }
     let running = own.filter { $0.status == .running }.count
     print("\(tool.rawValue): \(sessions.count) sessions, \(subagents.count) subagents, \(running) running")
+}
+
+func printUsageReport() {
+    let now = Date()
+    let start = UsageReport.windowStart(now: now)
+    var entries: [UsageEntry] = []
+    for source in [ClaudeCodeSource(), OpenCodeSource()] as [any UsageSource] {
+        do {
+            entries += try source.fetchUsage(since: start)
+        } catch {
+            FileHandle.standardError.write(Data("[\(source.tool.rawValue)] \(error)\n".utf8))
+        }
+    }
+    let report = UsageReport.make(entries: entries, now: now)
+    for (title, period) in [("TODAY", report.today), ("LAST 7 DAYS", report.week)] {
+        print("== \(title)")
+        print(pad("MODEL", 40), pad("TOOL", 12), pad("IN", 9), pad("OUT", 9), pad("CACHE READ", 11), pad("MSGS", 6), "COST")
+        for model in period.models {
+            print(
+                pad(model.model, 40), pad(model.tool.rawValue, 12), pad(TokenUsage.compact(model.usage.input), 9),
+                pad(TokenUsage.compact(model.usage.output), 9), pad(TokenUsage.compact(model.usage.cacheRead), 11),
+                pad("\(model.messages)", 6), model.cost.map { String(format: "$%.2f", $0) } ?? "-")
+        }
+        print(
+            pad("TOTAL", 40), pad("", 12), pad(TokenUsage.compact(period.total.input), 9),
+            pad(TokenUsage.compact(period.total.output), 9), pad(TokenUsage.compact(period.total.cacheRead), 11),
+            pad("\(period.messages)", 6), period.cost.map { String(format: "$%.2f", $0) } ?? "-")
+        print()
+    }
 }

@@ -25,6 +25,12 @@ private final class OpenCodeFixture {
                 tokens_cache_write INTEGER DEFAULT 0, directory TEXT
             )
             """)
+        exec("""
+            CREATE TABLE session_message (
+                id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER,
+                time_created INTEGER, time_updated INTEGER, data TEXT
+            )
+            """)
     }
 
     deinit {
@@ -50,6 +56,20 @@ private final class OpenCodeFixture {
             \(cost), \(tokens.input), \(tokens.output), \(tokens.reasoning), \(tokens.cacheRead), \
             \(tokens.cacheWrite), \(sql(directory)))
             """)
+    }
+
+    private var messageCount = 0
+
+    /// Mirrors an OpenCode 2.x message row; `data` is the JSON the tool stores.
+    func insertMessage(
+        type: String = "assistant", model: (id: String, provider: String, variant: String)? = ("gpt-6-luna", "openai", "high"),
+        input: Int = 0, output: Int = 0, reasoning: Int = 0, cacheRead: Int = 0, cacheWrite: Int = 0,
+        cost: Double = 0, created: Double
+    ) {
+        messageCount += 1
+        let modelJSON = model.map { #""model":{"id":"\#($0.id)","providerID":"\#($0.provider)","variant":"\#($0.variant)"},"# } ?? ""
+        let data = "{" + modelJSON + #""cost":\#(cost),"tokens":{"input":\#(input),"output":\#(output),"reasoning":\#(reasoning),"cache":{"read":\#(cacheRead),"write":\#(cacheWrite)}}}"#
+        exec("INSERT INTO session_message VALUES ('m\(messageCount)', 's', '\(type)', \(messageCount), \(Int64(created * 1000)), \(Int64(created * 1000)), '\(data)')")
     }
 
     private func exec(_ statement: String) {
@@ -206,6 +226,79 @@ private func fetch(_ fixture: OpenCodeFixture, since: Date = .distantPast) throw
 
         #expect {
             try source.fetchAgents(updatedSince: .distantPast, now: now)
+        } throws: { error in
+            if case AgentSourceError.dataNotFound = error { true } else { false }
+        }
+    }
+}
+
+@Suite struct OpenCodeUsageTests {
+    private func usage(_ fixture: OpenCodeFixture, since: Date = .distantPast) throws -> [UsageEntry] {
+        try OpenCodeSource(databaseURL: fixture.databaseURL).fetchUsage(since: since)
+    }
+
+    @Test func readsModelTokensCostAndTimePerMessage() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insertMessage(
+            input: 603, output: 138, reasoning: 102, cacheRead: 124_288, cacheWrite: 7, cost: 0.31, created: t - 100)
+
+        let entry = try #require(try usage(fixture).first)
+        #expect(entry.tool == .openCode)
+        #expect(entry.model == ModelRef(provider: "openai", id: "gpt-6-luna", variant: "high"))
+        #expect(entry.usage == TokenUsage(input: 603, output: 138, reasoning: 102, cacheRead: 124_288, cacheWrite: 7))
+        #expect(entry.cost == 0.31)
+        #expect(entry.date == Date(timeIntervalSince1970: t - 100))
+    }
+
+    @Test func aSessionThatSwitchedModelsYieldsOneEntryPerMessage() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insertMessage(model: ("gpt-6-sol", "openai", "default"), input: 10, created: t - 200)
+        fixture.insertMessage(model: ("gpt-6-luna", "openai", "xhigh"), input: 20, created: t - 100)
+
+        let models = try usage(fixture).compactMap(\.model?.id).sorted()
+        #expect(models == ["gpt-6-luna", "gpt-6-sol"])
+    }
+
+    @Test func ignoresNonAssistantMessagesAndEmptyOnes() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insertMessage(type: "user", input: 5, created: t - 100)
+        fixture.insertMessage(type: "compaction", input: 5, created: t - 100)
+        fixture.insertMessage(input: 0, output: 0, created: t - 100)
+        fixture.insertMessage(input: 1, created: t - 100)
+
+        #expect(try usage(fixture).count == 1)
+    }
+
+    @Test func zeroCostMeansUnpriced() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insertMessage(input: 1, cost: 0, created: t - 100)
+
+        #expect(try usage(fixture).first?.cost == nil)
+    }
+
+    @Test func excludesMessagesBeforeTheRequestedStart() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insertMessage(input: 1, created: t - 7200)
+        fixture.insertMessage(input: 2, created: t - 60)
+
+        let entries = try usage(fixture, since: now.addingTimeInterval(-3600))
+        #expect(entries.map(\.usage.input) == [2])
+    }
+
+    @Test func aMessageWithoutAModelStillCounts() throws {
+        let fixture = try OpenCodeFixture()
+        fixture.insertMessage(model: nil, input: 3, created: t - 60)
+
+        let entry = try #require(try usage(fixture).first)
+        #expect(entry.model == nil)
+        #expect(entry.usage.input == 3)
+    }
+
+    @Test func missingDatabaseThrowsDataNotFound() {
+        let source = OpenCodeSource(databaseURL: URL(fileURLWithPath: "/nonexistent/opencode.db"))
+
+        #expect {
+            try source.fetchUsage(since: .distantPast)
         } throws: { error in
             if case AgentSourceError.dataNotFound = error { true } else { false }
         }

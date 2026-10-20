@@ -27,10 +27,12 @@ public struct ModelRef: Sendable, Equatable {
         self.variant = variant
     }
 
+    /// Provider and model without the variant: what usage is grouped by.
+    public var name: String { provider.map { "\($0)/\(id)" } ?? id }
+
     public var displayName: String {
-        var text = provider.map { "\($0)/\(id)" } ?? id
-        if let variant, variant != "default" { text += " (\(variant))" }
-        return text
+        guard let variant, variant != "default" else { return name }
+        return "\(name) (\(variant))"
     }
 }
 

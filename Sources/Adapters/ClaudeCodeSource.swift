@@ -21,22 +21,29 @@ public final class ClaudeCodeSource: AgentSource {
     }
 
     public func fetchAgents(updatedSince: Date, now: Date) throws -> [Agent] {
+        try requireProjectsRoot()
+        let urls = transcriptURLs(modifiedSince: updatedSince)
+        return urls.sessions.compactMap { mainSession(at: $0, now: now) }
+            + urls.subagents.compactMap { subagent(at: $0, now: now) }
+    }
+
+    private func requireProjectsRoot() throws {
         guard FileManager.default.fileExists(atPath: projectsRoot.path) else {
             throw AgentSourceError.dataNotFound(projectsRoot.path)
         }
-        var agents: [Agent] = []
+    }
+
+    private func transcriptURLs(modifiedSince: Date) -> (sessions: [URL], subagents: [URL]) {
+        var sessions: [URL] = []
+        var subagents: [URL] = []
         for project in subdirectories(of: projectsRoot) {
-            for url in jsonlFiles(in: project, modifiedSince: updatedSince) {
-                if let agent = mainSession(at: url, now: now) { agents.append(agent) }
-            }
+            sessions += jsonlFiles(in: project, modifiedSince: modifiedSince)
             for session in subdirectories(of: project) {
-                let subagents = session.appendingPathComponent("subagents")
-                for url in jsonlFiles(in: subagents, modifiedSince: updatedSince) {
-                    if let agent = subagent(at: url, now: now) { agents.append(agent) }
-                }
+                subagents += jsonlFiles(
+                    in: session.appendingPathComponent("subagents"), modifiedSince: modifiedSince)
             }
         }
-        return agents
+        return (sessions, subagents)
     }
 
     // MARK: - Discovery
@@ -137,6 +144,14 @@ public final class ClaudeCodeSource: AgentSource {
 
     // MARK: - Transcript parsing (cached by mtime + size)
 
+    /// One model response: what the usage report is built from.
+    private struct Message {
+        let id: String
+        let model: String?
+        let date: Date
+        let usage: TokenUsage
+    }
+
     private struct Transcript {
         let modifiedAt: Date
         let size: Int
@@ -146,6 +161,7 @@ public final class ClaudeCodeSource: AgentSource {
         let model: String?
         let title: String?
         let usage: TokenUsage
+        let messages: [Message]
         let lastStopReason: String?
         let userWroteAfterAssistant: Bool
         let startedAt: Date
@@ -178,7 +194,8 @@ public final class ClaudeCodeSource: AgentSource {
         var lastStopReason: String?
         var userWroteAfterAssistant = false
         // A message is written once per content block with identical usage: keep one per id.
-        var usageByMessageID: [String: TokenUsage] = [:]
+        var messagesByID: [String: Message] = [:]
+        var rowDate: Date?
         var startedAt: Date?
         var updatedAt: Date?
 
@@ -188,9 +205,11 @@ public final class ClaudeCodeSource: AgentSource {
             agentID = agentID ?? row["agentId"] as? String
             // The latest cwd: a session can move to another project (e.g. after a directory change).
             directory = row["cwd"] as? String ?? directory
+            rowDate = nil
             if let stamp = row["timestamp"] as? String, let date = try? isoDate.parse(stamp) {
                 startedAt = startedAt ?? date
                 updatedAt = date
+                rowDate = date
             }
             switch row["type"] as? String {
             case "assistant":
@@ -198,8 +217,11 @@ public final class ClaudeCodeSource: AgentSource {
                 if let message = row["message"] as? [String: Any] {
                     model = message["model"] as? String ?? model
                     lastStopReason = message["stop_reason"] as? String
-                    if let id = message["id"] as? String, let raw = message["usage"] as? [String: Any] {
-                        usageByMessageID[id] = Self.tokenUsage(from: raw)
+                    if let id = message["id"] as? String, let raw = message["usage"] as? [String: Any],
+                       let date = messagesByID[id]?.date ?? rowDate
+                    {
+                        messagesByID[id] = Message(
+                            id: id, model: message["model"] as? String, date: date, usage: Self.tokenUsage(from: raw))
                     }
                 }
                 userWroteAfterAssistant = false
@@ -220,7 +242,8 @@ public final class ClaudeCodeSource: AgentSource {
         return Transcript(
             modifiedAt: modifiedAt, size: size, sessionID: sessionID, agentID: agentID,
             directory: directory, model: model, title: customTitle ?? aiTitle ?? lastPrompt,
-            usage: usageByMessageID.values.reduce(TokenUsage(), +),
+            usage: messagesByID.values.map(\.usage).reduce(TokenUsage(), +),
+            messages: Array(messagesByID.values),
             lastStopReason: lastStopReason, userWroteAfterAssistant: userWroteAfterAssistant,
             startedAt: startedAt, updatedAt: updatedAt
         )
@@ -233,5 +256,25 @@ public final class ClaudeCodeSource: AgentSource {
             input: count("input_tokens"), output: count("output_tokens"), reasoning: thinking,
             cacheRead: count("cache_read_input_tokens"), cacheWrite: count("cache_creation_input_tokens")
         )
+    }
+}
+
+extension ClaudeCodeSource: UsageSource {
+    /// Every assistant message at or after `since`, from sessions and subagents.
+    /// Message ids are unique across files, but they are deduplicated anyway.
+    public func fetchUsage(since: Date) throws -> [UsageEntry] {
+        try requireProjectsRoot()
+        let urls = transcriptURLs(modifiedSince: since)
+        var byID: [String: UsageEntry] = [:]
+        for url in urls.sessions + urls.subagents {
+            guard let transcript = cachedTranscript(at: url) else { continue }
+            for message in transcript.messages where message.date >= since && !message.usage.isEmpty {
+                byID[message.id] = UsageEntry(
+                    tool: .claudeCode,
+                    model: message.model.map { ModelRef(provider: "anthropic", id: $0, variant: nil) },
+                    date: message.date, usage: message.usage)
+            }
+        }
+        return Array(byID.values)
     }
 }

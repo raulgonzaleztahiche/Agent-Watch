@@ -30,6 +30,11 @@ public final class OpenCodeSource: AgentSource {
     private static let idleMarginMs: Int64 = 1000
 
     public func fetchAgents(updatedSince: Date, now: Date) throws -> [Agent] {
+        try rows(sql: Self.query, since: updatedSince) { Self.agent(from: $0, now: now) }
+    }
+
+    /// Opens the database read-only, binds `since` (epoch ms) as the only parameter and maps every row.
+    fileprivate func rows<T>(sql: String, since: Date, map: (OpaquePointer?) -> T?) throws -> [T] {
         guard FileManager.default.fileExists(atPath: databaseURL.path) else {
             throw AgentSourceError.dataNotFound(databaseURL.path)
         }
@@ -45,22 +50,22 @@ public final class OpenCodeSource: AgentSource {
         sqlite3_busy_timeout(db, 2000)
 
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, Self.query, -1, &statement, nil) == SQLITE_OK else {
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
             throw AgentSourceError.readFailed(String(cString: sqlite3_errmsg(db)))
         }
         defer { sqlite3_finalize(statement) }
-        sqlite3_bind_int64(statement, 1, Int64(updatedSince.timeIntervalSince1970 * 1000))
+        sqlite3_bind_int64(statement, 1, Int64(since.timeIntervalSince1970 * 1000))
 
-        var agents: [Agent] = []
+        var result: [T] = []
         while true {
             let step = sqlite3_step(statement)
             if step == SQLITE_DONE { break }
             guard step == SQLITE_ROW else {
                 throw AgentSourceError.readFailed(String(cString: sqlite3_errmsg(db)))
             }
-            if let agent = Self.agent(from: statement, now: now) { agents.append(agent) }
+            if let value = map(statement) { result.append(value) }
         }
-        return agents
+        return result
     }
 
     private static func agent(from statement: OpaquePointer?, now: Date) -> Agent? {
@@ -134,7 +139,7 @@ public final class OpenCodeSource: AgentSource {
         return ModelRef(provider: decoded.providerID, id: decoded.id, variant: decoded.variant)
     }
 
-    private static func text(_ statement: OpaquePointer?, _ index: Int32) -> String? {
+    fileprivate static func text(_ statement: OpaquePointer?, _ index: Int32) -> String? {
         guard let value = sqlite3_column_text(statement, index) else { return nil }
         let string = String(cString: value)
         return string.isEmpty ? nil : string
@@ -143,5 +148,41 @@ public final class OpenCodeSource: AgentSource {
     /// OpenCode stores epoch milliseconds.
     private static func date(_ statement: OpaquePointer?, _ index: Int32) -> Date {
         Date(timeIntervalSince1970: Double(sqlite3_column_int64(statement, index)) / 1000)
+    }
+}
+
+extension OpenCodeSource: UsageSource {
+    /// Each assistant message stores its own model, tokens, cost and time, so a session that
+    /// switched models is split correctly.
+    private static let usageQuery = """
+        SELECT json_extract(data, '$.model.id'), json_extract(data, '$.model.providerID'),
+               json_extract(data, '$.model.variant'),
+               json_extract(data, '$.tokens.input'), json_extract(data, '$.tokens.output'),
+               json_extract(data, '$.tokens.reasoning'),
+               json_extract(data, '$.tokens.cache.read'), json_extract(data, '$.tokens.cache.write'),
+               json_extract(data, '$.cost'), time_created
+        FROM session_message
+        WHERE type = 'assistant' AND time_created >= ?
+        """
+
+    public func fetchUsage(since: Date) throws -> [UsageEntry] {
+        try rows(sql: Self.usageQuery, since: since) { statement in
+            let usage = TokenUsage(
+                input: Int(sqlite3_column_int64(statement, 3)),
+                output: Int(sqlite3_column_int64(statement, 4)),
+                reasoning: Int(sqlite3_column_int64(statement, 5)),
+                cacheRead: Int(sqlite3_column_int64(statement, 6)),
+                cacheWrite: Int(sqlite3_column_int64(statement, 7)))
+            guard !usage.isEmpty else { return nil }
+
+            let model = Self.text(statement, 0).map {
+                ModelRef(provider: Self.text(statement, 1), id: $0, variant: Self.text(statement, 2))
+            }
+            let cost = sqlite3_column_double(statement, 8)
+            return UsageEntry(
+                tool: .openCode, model: model,
+                date: Date(timeIntervalSince1970: Double(sqlite3_column_int64(statement, 9)) / 1000),
+                usage: usage, cost: cost > 0 ? cost : nil)
+        }
     }
 }

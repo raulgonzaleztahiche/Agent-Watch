@@ -78,13 +78,17 @@ private func assistant(
 
 private func usageRow(
     _ session: String, _ secondsAgo: Double, messageID: String,
-    input: Int, output: Int, cacheRead: Int = 0, cacheWrite: Int = 0, thinking: Int = 0
+    input: Int, output: Int, cacheRead: Int = 0, cacheWrite: Int = 0, thinking: Int = 0,
+    model: String = "claude-sonnet-5-5", agent: String? = nil
 ) -> [String: Any] {
-    ["type": "assistant", "sessionId": session, "timestamp": stamp(secondsAgo),
-     "message": ["id": messageID, "model": "claude-sonnet-5-5", "stop_reason": "end_turn",
+    var row: [String: Any] = [
+     "type": "assistant", "sessionId": session, "timestamp": stamp(secondsAgo),
+     "message": ["id": messageID, "model": model, "stop_reason": "end_turn",
                  "usage": ["input_tokens": input, "output_tokens": output,
                            "cache_read_input_tokens": cacheRead, "cache_creation_input_tokens": cacheWrite,
                            "output_tokens_details": ["thinking_tokens": thinking]]]]
+    if let agent { row["agentId"] = agent }
+    return row
 }
 
 private func fetch(_ fixture: ClaudeFixture, since: Date = .distantPast) throws -> [String: Agent] {
@@ -317,6 +321,108 @@ private func fetch(_ fixture: ClaudeFixture, since: Date = .distantPast) throws 
 
         #expect {
             try source.fetchAgents(updatedSince: .distantPast, now: now)
+        } throws: { error in
+            if case AgentSourceError.dataNotFound = error { true } else { false }
+        }
+    }
+}
+
+@Suite struct ClaudeCodeUsageEntriesTests {
+    private func entries(_ fixture: ClaudeFixture, since: Date = .distantPast) throws -> [UsageEntry] {
+        try fixture.source().fetchUsage(since: since)
+    }
+
+    @Test func yieldsOneEntryPerMessageWithItsOwnModelAndTime() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [
+            usageRow("s1", 300, messageID: "m1", input: 2, output: 100, model: "claude-opus-5-5"),
+            usageRow("s1", 200, messageID: "m2", input: 3, output: 200, model: "claude-sonnet-5-5"),
+        ])
+
+        let result = try entries(fixture).sorted { $0.date < $1.date }
+        #expect(result.map(\.model?.id) == ["claude-opus-5-5", "claude-sonnet-5-5"])
+        #expect(result.map(\.usage.output) == [100, 200])
+        #expect(result[0].tool == .claudeCode)
+        #expect(result[0].model?.provider == "anthropic")
+        #expect(result[0].date == now.addingTimeInterval(-300))
+    }
+
+    @Test func countsARepeatedMessageOnceAtItsFirstTimestamp() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [
+            usageRow("s1", 30, messageID: "m1", input: 2, output: 551),
+            usageRow("s1", 29, messageID: "m1", input: 2, output: 551),
+            usageRow("s1", 28, messageID: "m1", input: 2, output: 551),
+        ])
+
+        let result = try entries(fixture)
+        #expect(result.count == 1)
+        #expect(result[0].usage.output == 551)
+        #expect(result[0].date == now.addingTimeInterval(-30))
+    }
+
+    @Test func usesTheFinalCountersOfAMessageWhoseOutputGrewWhileStreaming() throws {
+        // Real transcripts: output_tokens is partial in the first rows of a message and final in the last.
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [
+            usageRow("s1", 30, messageID: "m1", input: 2, output: 8),
+            usageRow("s1", 29, messageID: "m1", input: 2, output: 300),
+            usageRow("s1", 28, messageID: "m1", input: 2, output: 551),
+        ])
+
+        let result = try entries(fixture)
+        #expect(result.count == 1)
+        #expect(result[0].usage.output == 551)
+        #expect(result[0].date == now.addingTimeInterval(-30))
+    }
+
+    @Test func includesSubagentMessages() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [usageRow("s1", 100, messageID: "main1", input: 1, output: 1)])
+        try fixture.writeSubagent(
+            "a1", session: "s1",
+            rows: [usageRow("s1", 50, messageID: "sub1", input: 5, output: 5, model: "claude-haiku-5-5", agent: "a1")],
+            meta: ["agentType": "Explore", "toolUseId": "t"])
+
+        #expect(Set(try entries(fixture).compactMap(\.model?.id)) == ["claude-sonnet-5-5", "claude-haiku-5-5"])
+    }
+
+    @Test func theSameMessageInTwoFilesCountsOnce() throws {
+        // A resumed session can carry earlier history into a new file.
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [usageRow("s1", 100, messageID: "shared", input: 1, output: 1)])
+        try fixture.writeMainSession("s2", rows: [usageRow("s2", 100, messageID: "shared", input: 1, output: 1)])
+
+        #expect(try entries(fixture).count == 1)
+    }
+
+    @Test func excludesMessagesBeforeTheRequestedStartEvenInARecentFile() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [
+            usageRow("s1", 7200, messageID: "old", input: 1, output: 1),
+            usageRow("s1", 60, messageID: "new", input: 2, output: 2),
+        ])
+
+        let result = try entries(fixture, since: now.addingTimeInterval(-3600))
+        #expect(result.map(\.usage.input) == [2])
+    }
+
+    @Test func skipsMessagesWithoutUsage() throws {
+        let fixture = try ClaudeFixture()
+        try fixture.writeMainSession("s1", rows: [
+            assistant("s1", 100, stop: "end_turn"),
+            usageRow("s1", 50, messageID: "zero", input: 0, output: 0),
+            usageRow("s1", 40, messageID: "real", input: 1, output: 1),
+        ])
+
+        #expect(try entries(fixture).count == 1)
+    }
+
+    @Test func missingProjectsRootThrowsDataNotFound() {
+        let source = ClaudeCodeSource(projectsRoot: URL(fileURLWithPath: "/nonexistent/projects"))
+
+        #expect {
+            try source.fetchUsage(since: .distantPast)
         } throws: { error in
             if case AgentSourceError.dataNotFound = error { true } else { false }
         }

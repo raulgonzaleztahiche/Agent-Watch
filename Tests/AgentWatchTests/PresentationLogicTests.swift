@@ -240,3 +240,56 @@ private final class FakeSource: AgentSource {
         #expect(sum == TokenUsage(input: 11, output: 22, reasoning: 33, cacheRead: 44, cacheWrite: 55))
     }
 }
+
+private final class FakeUsageSource: AgentSource, UsageSource {
+    let tool: AgentTool
+    let result: Result<[UsageEntry], AgentSourceError>
+
+    init(tool: AgentTool, result: Result<[UsageEntry], AgentSourceError>) {
+        self.tool = tool
+        self.result = result
+    }
+
+    func fetchAgents(updatedSince: Date, now: Date) throws -> [Agent] { [] }
+    func fetchUsage(since: Date) throws -> [UsageEntry] { try result.get() }
+}
+
+@Suite struct UsageRepositoryTests {
+    private let entry = UsageEntry(tool: .openCode, model: nil, date: .now, usage: TokenUsage(input: 1))
+
+    @Test func mergesEntriesFromEverySourceThatReportsUsage() async {
+        let repository = AgentRepository {
+            [
+                FakeUsageSource(tool: .claudeCode, result: .success([entry])),
+                FakeUsageSource(tool: .openCode, result: .success([entry, entry])),
+            ]
+        }
+
+        let result = await repository.fetchUsage(since: .distantPast)
+
+        #expect(result.entries.count == 3)
+        #expect(result.errors.isEmpty)
+    }
+
+    @Test func aFailingSourceDoesNotHideTheOthers() async {
+        let repository = AgentRepository {
+            [
+                FakeUsageSource(tool: .claudeCode, result: .failure(.dataNotFound("~/.claude"))),
+                FakeUsageSource(tool: .openCode, result: .success([entry])),
+            ]
+        }
+
+        let result = await repository.fetchUsage(since: .distantPast)
+
+        #expect(result.entries.count == 1)
+        #expect(result.errors.count == 1 && result.errors[0].hasPrefix("claude-code:"))
+    }
+
+    @Test func skipsSourcesThatDoNotReportUsage() async {
+        let repository = AgentRepository { [FakeSource(tool: .claudeCode, result: .success([]))] }
+
+        let result = await repository.fetchUsage(since: .distantPast)
+
+        #expect(result == UsageFetchResult(entries: [], errors: []))
+    }
+}
