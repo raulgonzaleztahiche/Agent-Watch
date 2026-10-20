@@ -9,7 +9,7 @@ public struct AgentNode: Sendable, Equatable {
 public struct AgentRow: Sendable, Equatable, Identifiable {
     public let agent: Agent
     public let depth: Int
-    public var id: String { "\(agent.tool.rawValue):\(agent.id)" }
+    public var id: String { agent.key }
 
     public init(agent: Agent, depth: Int) {
         self.agent = agent

@@ -51,6 +51,12 @@ struct AgentListView: View {
                 .toggleStyle(.checkbox)
                 .disabled(!launchAtLogin.isAvailable)
                 .help(launchAtLogin.isAvailable ? "" : "Only available from the packaged .app")
+                Toggle("Also notify when a subagent finishes", isOn: Binding(
+                    get: { store.notifyOnFinish },
+                    set: { store.notifyOnFinish = $0 }
+                ))
+                .toggleStyle(.checkbox)
+                .help("Failures and interruptions always notify")
                 ForEach(store.errors + [launchAtLogin.errorMessage].compactMap { $0 }, id: \.self) { error in
                     Text(error).font(.caption2).foregroundStyle(.red)
                 }

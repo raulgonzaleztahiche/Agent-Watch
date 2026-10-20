@@ -56,6 +56,9 @@ public struct Agent: Sendable, Equatable, Identifiable {
 
     public var isMainSession: Bool { parentSessionID == nil }
 
+    /// Unique across tools, since two tools could reuse the same session id.
+    public var key: String { "\(tool.rawValue):\(id)" }
+
     public init(
         id: String,
         tool: AgentTool,
