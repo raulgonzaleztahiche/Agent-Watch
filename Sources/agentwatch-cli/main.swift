@@ -5,7 +5,7 @@ import Foundation
 // Spike: print main sessions and their subagents as a tree, newest first.
 // Usage: agentwatch-cli [--hours N] [--usage]   (default: 24 h, agent tree)
 //   --usage   prints token usage per model for today and the last 7 days instead
-//   --limits  prints the plan limits reported by Codex instead
+//   --limits  prints the plan limits reported by Codex and Claude instead
 
 let usage = "usage: agentwatch-cli [--hours N] [--usage] [--limits]"
 var showUsage = false
@@ -121,20 +121,20 @@ func printUsageReport() {
 
 func printLimits() {
     let now = Date()
-    let source = CodexLimitSource()
-    do {
-        let limits = try source.fetchLimits()
-        if limits.isEmpty { print("\(source.provider): no limits reported") }
-        for limit in limits {
-            print("\(limit.title)\(limit.plan.map { " (\($0))" } ?? "")")
-            for window in limit.windows {
-                print("  \(pad(window.label, 10)) \(window.usedPercent)% used, resets in \(window.resetsIn(now: now) ?? "?")")
+    for source in [CodexLimitSource(), ClaudeLimitSource()] as [any LimitSource] {
+        do {
+            let limits = try source.fetchLimits()
+            if limits.isEmpty { print("\(source.provider): no limits reported") }
+            for limit in limits {
+                print("\(limit.title)\(limit.plan.map { " (\($0))" } ?? "")")
+                for window in limit.windows {
+                    print("  \(pad(window.label, 22)) \(window.usedPercent)% used, resets in \(window.resetsIn(now: now) ?? "?")")
+                }
             }
+        } catch AgentSourceError.dataNotFound {
+            print("\(source.provider): not installed")
+        } catch {
+            print("\(source.provider): \(error)")
         }
-    } catch AgentSourceError.dataNotFound {
-        print("\(source.provider): not installed")
-    } catch {
-        FileHandle.standardError.write(Data("[\(source.provider)] \(error)\n".utf8))
-        exit(1)
     }
 }

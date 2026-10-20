@@ -14,7 +14,7 @@ struct AgentListView: View {
             case .agents: content
             case .usage:
                 UsageView(
-                    report: store.usageReport, limits: store.limits, limitsError: store.limitsError, now: store.now)
+                    report: store.usageReport, limits: store.limits, limitErrors: store.limitErrors, now: store.now)
             }
             Divider()
             footer

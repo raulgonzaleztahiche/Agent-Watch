@@ -37,10 +37,29 @@ The **Usage** tab sums tokens per model for **today** or the **last 7 days** (ca
 It is built from every response in both tools, so a session that switched models is split correctly.
 Cost appears only when the tool reports one.
 
-At the top, **Plan limits** shows the limits Codex reports for your ChatGPT plan, e.g. `Weekly · 2% used ·
-resets in 6d 22h`, with a bar that turns orange at 80 % and red at 95 %. They are fetched only while the panel is
-open on the Usage tab, at most once a minute, by running `codex app-server` for a moment. If Codex is not
-installed the section is simply absent.
+At the top, **Plan limits** shows the limits each provider reports for your plan, e.g. Codex `Weekly · 2% used ·
+resets in 6d 22h` and Claude `Session · 45% used · resets in 3h 16m` plus `Weekly`, with a bar that turns orange
+at 80 % and red at 95 %. They are fetched only while the panel is open on the Usage tab, at most once a minute,
+by running the provider's own tool for a moment. A tool that is not installed is simply absent. If one fails, a
+note says so under the limits.
+
+## It never spends tokens
+
+Nothing this app does uses model tokens or your plan's quota. Everything it does outside your own files:
+
+| Action | What it runs | Why it costs nothing |
+| --- | --- | --- |
+| Agents, usage, history | Reads files and a SQLite database, read-only | No network, no model |
+| Claude limits | `claude -p "/usage"` (see above) | Claude Code owns the login: no token or credentials file is read. The text it prints (`Current session: 40% used · resets Oct 20 at 1:29pm (Atlantic/Canary)`) is parsed, so a wording change shows as "Limits unavailable", never as wrong numbers. |
+| Codex limits | `codex app-server`, only `initialize`, `initialized` and `account/rateLimits/read` | An account read. No thread or turn is ever started; a test checks that nothing else is sent |
+| Claude limits | `claude -p "/usage" --output-format json --safe-mode --no-session-persistence` | `/usage` is a local slash command: it reports 0 turns, 0 cost and 0 tokens |
+| Row menu, notifications | Clipboard, Finder, local notifications | Local |
+
+For Claude this is **verified on every call**, not assumed. The JSON result must report zero turns, zero API time,
+zero cost, zero tokens and no model usage. If any of that is non-zero, or missing so it cannot be checked, the call is
+rejected and the source **disables itself until the app restarts**, so a change in Claude Code can cost at most
+one request. The command line is fixed by a test (the prompt is always the literal `/usage`), and
+`--no-session-persistence` keeps these calls from leaving a transcript in your session list.
 
 `in` and `out` are fresh tokens and leave out cache reads, which are far larger and much cheaper.
 
@@ -93,9 +112,10 @@ Neither tool exposes a "running" flag, so it is inferred:
 - Tokens are per session or subagent. A session does not include the tokens of its subagents.
 - Usage covers what is on disk. It is not the official usage or billing of Anthropic or OpenAI: those APIs
   need an organization admin key and measure API billing, not subscriptions.
-- Plan limits are shown for **Codex only**. Claude Code's 5-hour and weekly limits are not shown: they are only
-  available through a status line script (which changes Claude Code's configuration) or an undocumented OAuth
-  endpoint (which needs your session token). Neither is used.
+- Plan limits are shown for **Codex and Claude**, and only when those tools are installed and signed in. Claude's
+  come from `claude /usage`; the status line (which would change Claude Code's configuration, and clashes with
+  other tools that already use it) and Anthropic's undocumented OAuth endpoint (which needs your session token)
+  are not used.
 - The Codex limit is named `codex`. Whether usage made through OpenCode with the same ChatGPT account counts
   against it has not been verified.
 - "Active" is a time heuristic (30 minutes). It does not know whether the terminal is still open.

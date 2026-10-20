@@ -48,7 +48,7 @@ public final class CodexLimitSource: LimitSource {
         defer {
             output.fileHandleForReading.readabilityHandler = nil
             try? input.fileHandleForWriting.close()
-            Self.terminate(process)
+            ChildProcess.terminate(process)
         }
 
         let deadline = Date().addingTimeInterval(timeout)
@@ -83,31 +83,16 @@ public final class CodexLimitSource: LimitSource {
 
     // MARK: - Locating the binary
 
-    /// A Finder-launched app has a minimal PATH, so the usual install locations are tried first.
     static func locate(
         candidates: [String] = defaultCandidates(),
         environmentPath: String = ProcessInfo.processInfo.environment["PATH"] ?? ""
     ) -> URL? {
-        let onPath = environmentPath.split(separator: ":").map { "\($0)/codex" }
-        return (candidates + onPath)
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
-            .map { URL(fileURLWithPath: $0) }
+        ChildProcess.locate(name: "codex", candidates: candidates, environmentPath: environmentPath)
     }
 
     static func defaultCandidates() -> [String] {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return [
-            "/opt/homebrew/bin/codex", "/usr/local/bin/codex",
-            "\(home)/.local/bin/codex", "\(home)/.bun/bin/codex", "\(home)/.npm-global/bin/codex",
-        ]
-    }
-
-    private static func terminate(_ process: Process) {
-        guard process.isRunning else { return }
-        process.terminate()
-        let deadline = Date().addingTimeInterval(1)
-        while process.isRunning && Date() < deadline { usleep(20_000) }
-        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]
+            + ChildProcess.homeRelative([".local/bin/codex", ".bun/bin/codex", ".npm-global/bin/codex"])
     }
 
     // MARK: - Parsing

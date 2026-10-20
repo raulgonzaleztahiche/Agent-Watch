@@ -11,11 +11,14 @@ public struct LimitWindow: Sendable, Equatable {
     public let minutes: Int?
     public let usedPercent: Int
     public let resetsAt: Date?
+    /// A provider's own name for the window ("Session", "Weekly · Opus"). Falls back to the length.
+    public let name: String?
 
-    public init(minutes: Int?, usedPercent: Int, resetsAt: Date?) {
+    public init(minutes: Int?, usedPercent: Int, resetsAt: Date?, name: String? = nil) {
         self.minutes = minutes
         self.usedPercent = usedPercent
         self.resetsAt = resetsAt
+        self.name = name
     }
 
     /// 80 % and above warns, 95 % and above is critical.
@@ -23,7 +26,7 @@ public struct LimitWindow: Sendable, Equatable {
         usedPercent >= 95 ? .critical : usedPercent >= 80 ? .warning : .normal
     }
 
-    public var label: String { Self.label(forMinutes: minutes) }
+    public var label: String { name ?? Self.label(forMinutes: minutes) }
 
     /// 10080 -> "Weekly", 1440 -> "Daily", 300 -> "5 hours", 45 -> "45 min", nil -> "Limit"
     public static func label(forMinutes minutes: Int?) -> String {

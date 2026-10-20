@@ -18,7 +18,8 @@ final class AgentStore {
     private(set) var usageReport = UsageReport.empty
     /// Plan limits as reported by the providers. Only fetched while the Usage tab is on screen.
     private(set) var limits: [PlanLimit] = []
-    private(set) var limitsError: String?
+    /// One message per provider that failed. A provider that is not installed is not an error.
+    private(set) var limitErrors: [String] = []
     /// Set by the popover; limits are never fetched while nobody is looking.
     var isPanelVisible = false {
         didSet { if isPanelVisible && !oldValue { refreshLimitsIfNeeded() } }
@@ -41,7 +42,11 @@ final class AgentStore {
         didSet { UserDefaults.standard.set(showRecent, forKey: Self.showRecentKey) }
     }
 
-    private let limitRepository = LimitRepository { [CodexLimitSource()] }
+    /// One repository per provider so their processes run side by side and a slow one delays nobody.
+    private let limitRepositories = [
+        LimitRepository { [CodexLimitSource()] },
+        LimitRepository { [ClaudeLimitSource()] },
+    ]
     private var limitsInFlight = false
     private var lastLimitsRefresh = Date.distantPast
 
@@ -107,6 +112,17 @@ final class AgentStore {
         refreshLimitsIfNeeded()
     }
 
+    private func fetchLimits() async -> [LimitFetchResult] {
+        await withTaskGroup(of: (Int, LimitFetchResult).self) { group in
+            for (index, repository) in limitRepositories.enumerated() {
+                group.addTask { (index, await repository.fetch()) }
+            }
+            var results: [(Int, LimitFetchResult)] = []
+            for await result in group { results.append(result) }
+            return results.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+    }
+
     /// Starts a background fetch when the Usage tab is visible and the last one is old enough.
     /// It never blocks the polling loop: the provider process can take a second or more.
     private func refreshLimitsIfNeeded() {
@@ -115,9 +131,9 @@ final class AgentStore {
         else { return }
         limitsInFlight = true
         Task {
-            let result = await limitRepository.fetch()
-            limits = result.limits
-            limitsError = result.errors.first
+            let results = await fetchLimits()
+            limits = results.flatMap(\.limits)
+            limitErrors = results.flatMap(\.errors)
             lastLimitsRefresh = Date()
             limitsInFlight = false
         }

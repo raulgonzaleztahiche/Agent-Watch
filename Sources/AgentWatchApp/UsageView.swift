@@ -17,7 +17,7 @@ struct UsageView: View {
 
     let report: UsageReport
     let limits: [PlanLimit]
-    let limitsError: String?
+    let limitErrors: [String]
     let now: Date
     @State private var period = Period.today
 
@@ -43,9 +43,9 @@ struct UsageView: View {
     }
 
     private var limitsHeight: CGFloat {
-        guard !limits.isEmpty || limitsError != nil else { return 0 }
+        guard !limits.isEmpty || !limitErrors.isEmpty else { return 0 }
         let plans = limits.reduce(CGFloat(0)) { $0 + Self.limitTitleHeight + CGFloat($1.windows.count) * Self.limitWindowHeight }
-        return Self.limitsHeaderHeight + plans + (limits.isEmpty ? Self.limitsNoteHeight : 0)
+        return Self.limitsHeaderHeight + plans + CGFloat(limitErrors.count) * Self.limitsNoteHeight
     }
 
     private func content(for period: UsagePeriod) -> some View {
@@ -74,7 +74,7 @@ struct UsageView: View {
 
     @ViewBuilder
     private var limitsSection: some View {
-        if !limits.isEmpty || limitsError != nil {
+        if !limits.isEmpty || !limitErrors.isEmpty {
             HStack(spacing: 6) {
                 Image(systemName: "gauge.with.dots.needle.33percent").font(.caption2)
                 Text("PLAN LIMITS").font(.caption.weight(.semibold))
@@ -86,13 +86,14 @@ struct UsageView: View {
             ForEach(limits) { limit in
                 LimitRow(limit: limit, now: now)
             }
-            if limits.isEmpty, let limitsError {
-                Text("Limits unavailable")
+            ForEach(limitErrors, id: \.self) { error in
+                Label(error, systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(error.contains("must never use tokens") ? Color.red : Color.orange)
+                    .lineLimit(1)
                     .padding(.horizontal, 12)
                     .frame(height: Self.limitsNoteHeight, alignment: .leading)
-                    .help(limitsError)
+                    .help(error)
             }
             Divider().padding(.vertical, 4)
         }

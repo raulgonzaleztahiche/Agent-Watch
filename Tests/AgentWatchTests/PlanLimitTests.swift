@@ -25,6 +25,11 @@ private let now = Date(timeIntervalSince1970: 1_000_000)
         #expect(LimitWindow(minutes: 10_080, usedPercent: percent, resetsAt: nil).severity == expected)
     }
 
+    @Test func aProviderNameOverridesTheLabelFromTheLength() {
+        #expect(LimitWindow(minutes: 300, usedPercent: 1, resetsAt: nil, name: "Session").label == "Session")
+        #expect(LimitWindow(minutes: 300, usedPercent: 1, resetsAt: nil).label == "5 hours")
+    }
+
     @Test func resetsInShowsTheTimeLeft() {
         let window = LimitWindow(minutes: 10_080, usedPercent: 2, resetsAt: now.addingTimeInterval(6 * 86_400 + 22 * 3_600))
 

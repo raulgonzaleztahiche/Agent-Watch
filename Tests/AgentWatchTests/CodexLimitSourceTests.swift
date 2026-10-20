@@ -22,11 +22,12 @@ private final class FakeCodex {
     }
 
     /// Answers like Codex, but only accepts the limits request after the `initialized` notification.
-    func server(result: String) throws -> URL {
+    func server(result: String, log: String? = nil) throws -> URL {
         try script("""
         echo '{"method":"server/ready"}'
         initialized=0
         while IFS= read -r line; do
+          \(log.map { "echo \"$line\" >> '\($0)'" } ?? ":")
           case "$line" in
             *'"method":"initialize"'*) echo '{"id":1,"result":{}}' ;;
             *'"method":"initialized"'*) initialized=1 ;;
@@ -54,6 +55,19 @@ private let weeklyResult = """
                 provider: "Codex", name: "codex", plan: "team",
                 windows: [LimitWindow(minutes: 10_080, usedPercent: 2, resetsAt: Date(timeIntervalSince1970: 1_793_086_140))]),
         ])
+    }
+
+    @Test func onlyTheThreeReadOnlyMessagesAreEverSent() throws {
+        // Starting a thread or a turn would run the model. Only the handshake and the limits read may go out.
+        let fake = try FakeCodex()
+        let log = fake.directory.appendingPathComponent("received").path
+
+        _ = try CodexLimitSource(executable: try fake.server(result: weeklyResult, log: log), timeout: 10).fetchLimits()
+
+        let methods = try String(contentsOfFile: log, encoding: .utf8).split(separator: "\n").compactMap { line in
+            (try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])?["method"] as? String
+        }
+        #expect(methods == ["initialize", "initialized", "account/rateLimits/read"])
     }
 
     @Test func anErrorResponseBecomesAReadableFailure() throws {
